@@ -1,8 +1,16 @@
 #[derive(Debug, Clone)]
-pub struct HeapAddress {
+pub struct SharkyHeapAddress {
     frame: usize,
     index: usize,
 }
+
+pub type SharkyMax = usize;
+pub type SharkyInt = i64;
+pub type SharkyReal = f64;
+pub type SharkyByte = u8;
+pub type SharkyBool = bool;
+pub type SharkyString = String;
+pub type SharkyHeapReference = SharkyHeapAddress;
 
 #[derive(Debug, Clone)]
 pub enum SharkyDataType {
@@ -12,7 +20,7 @@ pub enum SharkyDataType {
     Byte(u8),
     Bool(bool),
     String(String),
-    HeapReference(HeapAddress),
+    HeapReference(SharkyHeapAddress),
     Nil
 }
 
@@ -63,4 +71,16 @@ impl SharkyFrame {
             SharkyDataType::Nil
         }
     }
+    pub fn size(&self) -> usize {
+        self.stack.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.stack.clear();
+    }
+}
+
+pub struct SharkyMemory {
+    local_frames: Vec<SharkyFrame>,
+    heap_frames: Vec<SharkyFrame>,
 }
