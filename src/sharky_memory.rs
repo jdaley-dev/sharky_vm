@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[derive(Debug, Clone)]
 pub struct SharkyHeapAddress {
     frame: usize,
@@ -81,6 +83,6 @@ impl SharkyFrame {
 }
 
 pub struct SharkyMemory {
-    local_frames: Vec<SharkyFrame>,
-    heap_frames: Vec<SharkyFrame>,
+    local_frames: Vec<Arc<SharkyFrame>>,
+    heap_frames: Vec<Arc<SharkyFrame>>,
 }
