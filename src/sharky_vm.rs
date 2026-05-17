@@ -235,7 +235,25 @@ impl SharkyInterpreter {
             SharkyInstruction::GreaterThanOrEquals((a, b)) => {operational_binary_comparison_impl!(self, a, b, >=);}
             SharkyInstruction::LesserThanOrEquals((a, b)) => {operational_binary_comparison_impl!(self, a, b, <=);}
 
-            
+            SharkyInstruction::Jump(a) => {
+                self.program_counter = a;
+                return Some(());
+            }            
+
+            SharkyInstruction::JumpIfNot((a, b)) => {
+                let read = self.get_active_stack()?.read(b);
+                let mut jump = false;
+                match read {
+                    SharkyDataType::Bool(a) => {
+                        jump = !a;
+                    }
+                    _ => {}
+                }
+                if jump {
+                    self.program_counter = a;
+                    return Some(());
+                }
+            }
 
             _ => {}
         }

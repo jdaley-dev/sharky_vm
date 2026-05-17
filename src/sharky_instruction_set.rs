@@ -70,11 +70,9 @@ pub enum SharkyInstruction {
     PopJumpIfNot(usize),
     #[default]
     NoOperation,
-
-    // Native operations
-    PushNative(usize),
-    ClaimNative(usize), // pushes a native index into the selected stack.
-    ClearNative,
+    
+    // Native operation
+    CopyNativeResultToStack,
     CallNative(usize),
 }
 
