@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{any::Any, sync::{Arc, Mutex}};
 
 #[derive(Debug, Clone)]
 pub struct SharkyHeapAddress {
@@ -26,6 +26,7 @@ pub enum SharkyDataType {
     Nil
 }
 
+
 impl std::fmt::Display for SharkyDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -41,13 +42,13 @@ impl std::fmt::Display for SharkyDataType {
     }
 }
 
-pub struct SharkyFrame {
+pub struct SharkyStack {
     stack: Vec<SharkyDataType>,
 }
 
-impl SharkyFrame {
-    pub fn default() -> SharkyFrame {
-        SharkyFrame { 
+impl SharkyStack {
+    pub fn default() -> SharkyStack {
+        SharkyStack { 
             stack: Vec::new()
         }
     }
@@ -66,13 +67,21 @@ impl SharkyFrame {
         }
     }
 
-    pub fn get(&mut self, index: usize) -> SharkyDataType {
-        return if let Some(val) = self.stack.get_mut(index) {
-            val.clone()
-        } else {
-            SharkyDataType::Nil
+    pub fn read(&self, index: usize) -> SharkyDataType {
+        self.stack.get(index).unwrap_or(&SharkyDataType::Nil).clone()
+    }
+
+    pub fn read_top(&self) -> SharkyDataType {
+        self.read(self.size() - 1).clone()
+    }
+
+    pub fn debug_print_stack(&self) {
+        println!("--- SHARKY STACK DEBUG PRINT ---");
+        for i in self.stack.iter() {
+            println!("- {i}\n--------------------------------")
         }
     }
+
     pub fn size(&self) -> usize {
         self.stack.len()
     }
@@ -82,7 +91,4 @@ impl SharkyFrame {
     }
 }
 
-pub struct SharkyMemory {
-    local_frames: Vec<Arc<SharkyFrame>>,
-    heap_frames: Vec<Arc<SharkyFrame>>,
-}
+pub type SharkyStackVec = Vec<SharkyStack>;
