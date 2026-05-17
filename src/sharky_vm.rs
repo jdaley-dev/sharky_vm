@@ -134,6 +134,16 @@ impl SharkyInterpreter {
         Some(())
     }
 
+    fn read_size(&mut self, index: usize) -> Option<usize> {
+        let data = self.get_active_stack()?.read(index);
+        match data {
+            SharkyDataType::Max(a) => Some(a),
+            SharkyDataType::Int(a) => Some(a as usize),
+            SharkyDataType::Byte(a) => Some(a as usize),
+            _ => None 
+        }
+    }
+
     fn interpret(&mut self) -> Option<()> {
 
         let current_instruction = self.program_memory
@@ -188,6 +198,29 @@ impl SharkyInterpreter {
             SharkyInstruction::CopyTo((a, b)) => {
                 if let Some(stack) = self.get_active_stack() {
                     stack.set(a, stack.read(b));
+                }
+            }
+
+            SharkyInstruction::CopySlotTo((a, b)) => {
+                let index = self.read_size(b)?;
+                if let Some(stack) = self.get_active_stack() {
+                    stack.set(a, stack.read(index));
+                }
+            }
+
+            SharkyInstruction::CopySlotToSlot((a, b)) => {
+                let index_a = self.read_size(a)?;
+                let index_b = self.read_size(b)?;
+
+                if let Some(stack) = self.get_active_stack() {
+                    stack.set(index_a, stack.read(index_b));
+                }
+            }
+
+            SharkyInstruction::CopyToSlot((a, b)) => {
+                let index_a = self.read_size(a)?;
+                if let Some(stack) = self.get_active_stack() {
+                    stack.set(index_a, stack.read(b));
                 }
             }
 

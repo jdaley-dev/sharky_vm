@@ -28,13 +28,19 @@ pub enum SharkyInstruction {
     // stack operations
     Copy(usize),
     Nilify(usize),
+    // All copy operations are (dest, src)
     CopyTo((usize, usize)),
+    CopySlotTo((usize, usize)),
+    CopySlotToSlot((usize, usize)),
+    CopyToSlot((usize, usize)),
     Pop,
     Clear,
 
     // operative operations    
     CopyOperativeToStack, // Copies the top of the operative stack to the selected indexed stack.
 
+
+    // All operations are a OP b
     Add((usize, usize)),
     Subtract((usize, usize)),
     Multiply((usize, usize)),
@@ -56,6 +62,15 @@ pub enum SharkyInstruction {
     GreaterThanOrEquals((usize, usize)),
     LesserThanOrEquals((usize, usize)),
 
+    // Logic operations
+    Jump(usize),
+    // conditional jumps are (to, condition)
+    JumpIfNot((usize, usize)),
+    // popjumpifnot checks if the top of the stack is false then if false it pops it, and jumps to the location
+    PopJumpIfNot(usize),
+    #[default]
+    NoOperation,
+    
     // functional operations
     Call(usize),
     Return,
@@ -64,13 +79,8 @@ pub enum SharkyInstruction {
     SpawnThread(usize),
     Await(usize),
 
-    // Logic operations
-    Jump(usize),
-    JumpIfNot((usize, usize)),
-    PopJumpIfNot(usize),
-    #[default]
-    NoOperation,
-    
+
+
     // Native operation
     CopyNativeResultToStack,
     CallNative(usize),
