@@ -1,6 +1,5 @@
-use std::{any::Any, sync::{Arc, Mutex}};
-
 #[derive(Debug, Clone)]
+#[derive(PartialEq, PartialOrd)]
 pub struct SharkyHeapAddress {
     frame: usize,
     index: usize,
@@ -14,7 +13,7 @@ pub type SharkyBool = bool;
 pub type SharkyString = String;
 pub type SharkyHeapReference = SharkyHeapAddress;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum SharkyDataType {
     Max(usize),
     Int(i64),
@@ -22,7 +21,7 @@ pub enum SharkyDataType {
     Byte(u8),
     Bool(bool),
     String(String),
-    HeapReference(SharkyHeapAddress),
+    HeapReference(SharkyHeapReference),
     Nil
 }
 
@@ -76,9 +75,11 @@ impl SharkyStack {
     }
 
     pub fn debug_print_stack(&self) {
+        let mut point = 0;
         println!("--- SHARKY STACK DEBUG PRINT ---");
         for i in self.stack.iter() {
-            println!("- {i}\n--------------------------------")
+            println!("{point} - [{i}]\n--------------------------------");
+            point += 1;
         }
     }
 

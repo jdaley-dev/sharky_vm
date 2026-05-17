@@ -1,96 +1,92 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+ 
+use crate::{sharky_memory::*, sharky_instruction_set::*};
 
-use crate::sharky_memory::{self, SharkyDataType, SharkyStack}; 
-
-#[derive(Default, Debug, Clone)]
-pub enum SharkyStackMode {
-    #[default]
-    Indexed,
-    Addressed,
-    Operative,
-    Native,
+macro_rules! operational_binary_impl {
+    ($self:ident, $a:expr, $b:expr, $op:tt) => {
+                // TODO: raise interrupt upon adding between non-existent stack elements
+                let index_a = $self.operational_stack.read($a);
+                let index_b = $self.operational_stack.read($b);
+                let result = match (index_a, index_b) {
+                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a $op b)}
+                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a $op b)}
+                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a $op b)}
+                    (_,_) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
+                };
+                $self.operational_stack.push(result);
+    };
+    ($self:ident, $a:expr, $b:expr, $op:tt, real) => {
+                // TODO: raise interrupt upon adding between non-existent stack elements
+                let index_a = $self.operational_stack.read($a);
+                let index_b = $self.operational_stack.read($b);
+                let result = match (index_a, index_b) {
+                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a $op b)}
+                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a $op b)}
+                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a $op b)}
+                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a $op b)}
+                    (_,_) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
+                };
+                $self.operational_stack.push(result);
+    };
+    // TODO: add b being zero variant. that raises an interrupt
 }
 
-#[derive(Default, Debug, Clone)]
-pub enum SharkyInstruction {
-    StackMode(SharkyStackMode),
-    SelectStack(usize),
-    PushStack,
-    PopStack,
-
-    // push a constant value to the top of the stack
-    ConstantPushMax(sharky_memory::SharkyMax),
-    ConstantPushInt(sharky_memory::SharkyInt),
-    ConstantPushReal(sharky_memory::SharkyReal),
-    ConstantPushByte(sharky_memory::SharkyByte),
-    ConstantPushBool(sharky_memory::SharkyBool),
-    ConstantPushString(sharky_memory::SharkyString),
-    ConstantPushHeapReference(sharky_memory::SharkyHeapAddress),
-    ConstantPushNil,
-
-    // memory operations
-    Copy(usize),
-    Nilify(usize),
-    CopyTo((usize, usize)),
-    Pop,
-
-    // operative operations    
-    CopyOperativeToStack, // Copies the top of the operative stack to the selected indexed stack.
-
-    Add((usize, usize)),
-    Subtract((usize, usize)),
-    Multiply((usize, usize)),
-    Divide((usize, usize)),
-    BitLeftShift((usize, usize)),
-    BitRightShift((usize, usize)),
-    BitAnd((usize, usize)),
-    BitXor((usize, usize)),
-    BitOr((usize, usize)),
-    BitNot(usize),
-    Not(usize),
-    And((usize, usize)),
-    Or((usize, usize)),
-    Equals((usize, usize)),
-    NotEquals((usize, usize)),
-    GreaterThan((usize, usize)),
-    LesserThan((usize, usize)),
-    GreaterThanOrEquals((usize, usize)),
-    LesserThanOrEquals((usize, usize)),
-
-    // functional operations
-    Call(usize),
-    Return,
-
-    // thread operations
-    SpawnThread(usize),
-    Await(usize),
-
-    // Logic operations
-    Jump(usize),
-    JumpIfNot((usize, usize)),
-    PopJumpIfNot((usize, usize)),
-    #[default]
-    NoOperation,
-
-    // Native operations
-    PushNative(usize),
-    ClaimNative(usize), // pushes a native index into the selected stack.
-    ClearNative,
-    CallNative(usize),
+macro_rules! operational_unary_impl {
+    
+    ($self:ident, $a:expr, $op:tt) => {
+                // TODO: raise interrupt upon adding between non-existent stack elements
+                let index = $self.operational_stack.read($a);
+                let result = match index {
+                    SharkyDataType::Int(a) => {SharkyDataType::Int($op a)}
+                    (SharkyDataType::Max(a)) => {SharkyDataType::Max($op a)}
+                    (SharkyDataType::Byte(a)) => {SharkyDataType::Byte($op a)}
+                    (_) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
+                };
+                $self.operational_stack.push(result);
+    };
 }
 
-pub type SharkyProgram = Vec<SharkyInstruction>;
-
-pub struct SharkyProcedure {
-    return_address: usize,
-    return_stack: usize,
+macro_rules! operational_binary_boolean_impl {
+    ($self:ident, $a:expr, $b:expr, $op:tt) => {
+                // TODO: raise interrupt upon adding between non-existent stack elements
+                let index_a = $self.operational_stack.read($a);
+                let index_b = $self.operational_stack.read($b);
+                let result = match (index_a, index_b) {
+                    (SharkyDataType::Bool(a), SharkyDataType::Bool(b)) => {SharkyDataType::Bool(a $op b)}
+                    (_,_) => {SharkyDataType::Bool(false)} // TODO: return type mismatch interrupt
+                };
+                $self.operational_stack.push(result);
+    };
 }
+
+macro_rules! operational_binary_comparison_impl {
+    ($self:ident, $a:expr, $b:expr, $op:tt) => {
+                // TODO: raise interrupt upon adding between non-existent stack elements
+                let index_a = $self.operational_stack.read($a);
+                let index_b = $self.operational_stack.read($b);
+                let result = match (index_a, index_b) {
+                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::Bool(a), SharkyDataType::Bool(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::String(a), SharkyDataType::String(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::HeapReference(a), SharkyDataType::HeapReference(b)) => {SharkyDataType::Bool(a $op b)}
+                    (SharkyDataType::Nil, SharkyDataType::Nil) => {SharkyDataType::Bool(SharkyDataType::Nil $op SharkyDataType::Nil)}
+                    (_,_) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
+                };
+                $self.operational_stack.push(result);
+    };
+}
+/*
+ * TODO:
+ * Switch local stack array to non_empty to prevent the representation of an error state.
+ */
 
 pub struct SharkyInterpreter {
     program_counter: usize,
-    operational_stack: sharky_memory::SharkyStack,
-    procedure_frame: Vec<SharkyProcedure>,
-    local_stacks: sharky_memory::SharkyStackVec,
+    operational_stack: SharkyStack,
+    local_stacks: SharkyStackVec,
     selected_local_stack: usize,
     program_memory: Arc<SharkyProgram>,
     stack_mode: SharkyStackMode,
@@ -101,20 +97,19 @@ impl SharkyInterpreter {
     pub fn new(program: Arc<SharkyProgram>) -> SharkyInterpreter {
         SharkyInterpreter { 
             program_counter: 0, 
-            operational_stack: sharky_memory::SharkyStack::default(), 
-            procedure_frame: vec![], 
-            local_stacks: vec![sharky_memory::SharkyStack::default()], 
+            operational_stack: SharkyStack::default(), 
+            local_stacks: vec![SharkyStack::default()], 
             selected_local_stack: 0, 
             program_memory: Arc::clone(&program),
             stack_mode: SharkyStackMode::Indexed,
         }
     }
 
-    pub fn get_operational_stack(&mut self) -> &sharky_memory::SharkyStack {
+    pub fn get_operational_stack(&mut self) -> &SharkyStack {
         &self.operational_stack
     }
 
-    pub fn get_current_stack(&mut self) -> Option<&mut sharky_memory::SharkyStack> {
+    pub fn get_current_stack(&mut self) -> Option<&mut SharkyStack> {
         if let Some(frame) = self.local_stacks.get_mut(self.selected_local_stack) {
             Some(frame)
         } else {
@@ -122,18 +117,20 @@ impl SharkyInterpreter {
         }
     }
 
-    fn push_constant(&mut self, value: sharky_memory::SharkyDataType) -> Option<()> {
-        // TODO: support other stack modes
+    fn get_active_stack(&mut self) -> Option<&mut SharkyStack> {
         match self.stack_mode {
             SharkyStackMode::Indexed => {
-                let stack_index = self.selected_local_stack;
-                self.local_stacks.get_mut(stack_index)?.push(value);
+                Some(self.get_current_stack()?)
             }
             SharkyStackMode::Operative => {
-                self.operational_stack.push(value);
+                Some(&mut self.operational_stack)
             }
-            _ => {}
+            _ => { None }
         }
+    }
+
+    fn push_constant(&mut self, value: SharkyDataType) -> Option<()> {
+        self.get_active_stack()?.push(value);
         Some(())
     }
 
@@ -146,7 +143,7 @@ impl SharkyInterpreter {
         // TODO: interrupts
         match current_instruction {
 
-            // stack ops
+            // stack select ops
             SharkyInstruction::StackMode(mode) =>
                 self.stack_mode = mode,
             SharkyInstruction::SelectStack(stack) =>
@@ -158,80 +155,88 @@ impl SharkyInterpreter {
             
             // constant push ops
             SharkyInstruction::ConstantPushNil => 
-                self.push_constant(sharky_memory::SharkyDataType::Nil)?,
+                self.push_constant(SharkyDataType::Nil)?,
             SharkyInstruction::ConstantPushReal(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::Real(v))?,
+                self.push_constant(SharkyDataType::Real(v))?,
             SharkyInstruction::ConstantPushMax(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::Max(v))?,
+                self.push_constant(SharkyDataType::Max(v))?,
             SharkyInstruction::ConstantPushInt(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::Int(v))?,
+                self.push_constant(SharkyDataType::Int(v))?,
             SharkyInstruction::ConstantPushByte(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::Byte(v))?,
+                self.push_constant(SharkyDataType::Byte(v))?,
             SharkyInstruction::ConstantPushBool(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::Bool(v))?,
+                self.push_constant(SharkyDataType::Bool(v))?,
             SharkyInstruction::ConstantPushString(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::String(v))?,
+                self.push_constant(SharkyDataType::String(v))?,
             SharkyInstruction::ConstantPushHeapReference(v) => 
-                self.push_constant(sharky_memory::SharkyDataType::HeapReference(v))?,
+                self.push_constant(SharkyDataType::HeapReference(v))?,
+
+            // stack ops
+            SharkyInstruction::Copy(index) => {
+                if let Some(stack) = self.get_active_stack() {
+                    let data = stack.read(index); // TODO: interrupt upon non-existent index
+                    stack.push(data);
+                }
+            }
+
+            SharkyInstruction::Nilify(index) => {
+                if let Some(stack) = self.get_active_stack() {
+                    stack.set(index, SharkyDataType::Nil);// TODO: interrupt upon non-existent index
+                }
+            }
+
+            SharkyInstruction::CopyTo((a, b)) => {
+                if let Some(stack) = self.get_active_stack() {
+                    stack.set(a, stack.read(b));
+                }
+            }
+
+            SharkyInstruction::Pop => {
+                if let Some(stack) = self.get_active_stack() {
+                    stack.pop();
+                }
+            }
+
+            SharkyInstruction::Clear => {
+                if let Some(stack) = self.get_active_stack() {
+                    stack.clear();
+                }
+            }
 
             // operative ops
-            SharkyInstruction::Add((a, b)) => {
-                // TODO: raise interrupt upon adding between non-existent stack elements
-                let index_a = self.operational_stack.read(a);
-                let index_b = self.operational_stack.read(b);
-                let result = match (index_a, index_b) {
-                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a + b)}
-                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a + b)}
-                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a + b)}
-                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a + b)}
-                    (l,r) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
+            SharkyInstruction::Add((a, b)) => {operational_binary_impl!(self, a, b, +, real);}
+            SharkyInstruction::Subtract((a, b)) => {operational_binary_impl!(self, a, b, -, real);}
+            SharkyInstruction::Multiply((a, b)) => {operational_binary_impl!(self, a, b, *, real);}
+            SharkyInstruction::Divide((a, b)) => {operational_binary_impl!(self, a, b, /, real);}
+            SharkyInstruction::Modulus((a, b)) => {operational_binary_impl!(self, a, b, %, real);}
+
+            SharkyInstruction::BitLeftShift((a, b)) => {operational_binary_impl!(self, a, b, <<);}
+            SharkyInstruction::BitRightShift((a, b)) => {operational_binary_impl!(self, a, b, >>);}
+            SharkyInstruction::BitAnd((a, b)) => {operational_binary_impl!(self, a, b, &);}
+            SharkyInstruction::BitXor((a, b)) => {operational_binary_impl!(self, a, b, ^);}
+            SharkyInstruction::BitOr((a, b)) => {operational_binary_impl!(self, a, b, |);}
+            SharkyInstruction::BitNot((a)) => {operational_unary_impl!(self, a, !);}
+
+            SharkyInstruction::Not(a) => {
+                let val = self.operational_stack.read(a);
+                let result = match val {
+                    SharkyDataType::Bool(a) => {!a}
+                    _ => {false}// TODO: type mismatch interrupt
                 };
-                self.operational_stack.push(result);
+                self.operational_stack.push(SharkyDataType::Bool(result));
             }
 
-            SharkyInstruction::Subtract((a, b)) => {
-                // TODO: raise interrupt upon adding between non-existent stack elements
-                let index_a = self.operational_stack.read(a);
-                let index_b = self.operational_stack.read(b);
-                let result = match (index_a, index_b) {
-                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a - b)}
-                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a - b)}
-                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a - b)}
-                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a - b)}
-                    (l,r) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
-                };
-                self.operational_stack.push(result);
-            }
+            SharkyInstruction::And((a, b)) => {operational_binary_boolean_impl!(self, a, b, &&);}
+            SharkyInstruction::Or((a, b)) => {operational_binary_boolean_impl!(self, a, b, ||);}
+            SharkyInstruction::Equals((a, b)) => {operational_binary_comparison_impl!(self, a, b, ==);}
+            SharkyInstruction::NotEquals((a, b)) => {operational_binary_comparison_impl!(self, a, b, !=);}
+            SharkyInstruction::GreaterThan((a, b)) => {operational_binary_comparison_impl!(self, a, b, >);}
+            SharkyInstruction::LesserThan((a, b)) => {operational_binary_comparison_impl!(self, a, b, <);}
+            SharkyInstruction::GreaterThanOrEquals((a, b)) => {operational_binary_comparison_impl!(self, a, b, >=);}
+            SharkyInstruction::LesserThanOrEquals((a, b)) => {operational_binary_comparison_impl!(self, a, b, <=);}
 
-            SharkyInstruction::Multiply((a, b)) => {
-                // TODO: raise interrupt upon adding between non-existent stack elements
-                let index_a = self.operational_stack.read(a);
-                let index_b = self.operational_stack.read(b);
-                let result = match (index_a, index_b) {
-                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a * b)}
-                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a * b)}
-                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a * b)}
-                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a * b)}
-                    (l,r) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
-                };
-                self.operational_stack.push(result);
-            }
-
-            SharkyInstruction::Divide((a, b)) => {
-                // TODO: raise interrupt upon adding between non-existent stack elements
-                let index_a = self.operational_stack.read(a);
-                let index_b = self.operational_stack.read(b);
-                // TODO: add interrupt for divide by zero
-                let result = match (index_a, index_b) {
-                    (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a / b)}
-                    (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a / b)}
-                    (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a / b)}
-                    (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a / b)}
-                    (l,r) => {SharkyDataType::Nil} // TODO: return type mismatch interrupt
-                };
-                self.operational_stack.push(result);
-            }
             
+
             _ => {}
         }
 
