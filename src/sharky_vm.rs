@@ -78,6 +78,11 @@ macro_rules! operational_binary_comparison_impl {
                 $self.operational_stack.push(result);
     };
 }
+pub struct SharkyCallFrame {
+    return_program_address: usize,
+    return_stack: usize,
+}
+
 /*
  * TODO:
  * Switch local stack array to non_empty to prevent the representation of an error state.
@@ -90,6 +95,8 @@ pub struct SharkyInterpreter {
     selected_local_stack: usize,
     program_memory: Arc<SharkyProgram>,
     stack_mode: SharkyStackMode,
+    parameter_stack: SharkyStack,
+    call_frames: Vec<SharkyCallFrame>,
 }
 
 impl SharkyInterpreter {
@@ -102,6 +109,8 @@ impl SharkyInterpreter {
             selected_local_stack: 0, 
             program_memory: Arc::clone(&program),
             stack_mode: SharkyStackMode::Indexed,
+            parameter_stack: SharkyStack::default(),
+            call_frames: vec![]
         }
     }
 
@@ -124,6 +133,9 @@ impl SharkyInterpreter {
             }
             SharkyStackMode::Operative => {
                 Some(&mut self.operational_stack)
+            }
+            SharkyStackMode::Parameter => {
+                Some(&mut self.parameter_stack)
             }
             _ => { None }
         }
@@ -286,6 +298,39 @@ impl SharkyInterpreter {
                     self.program_counter = a;
                     return Some(());
                 }
+            }
+
+            SharkyInstruction::Call(a) => {
+                self.call_frames.push(SharkyCallFrame { return_program_address: self.program_counter + 1, return_stack: self.selected_local_stack });
+                self.program_counter = a;
+                self.local_stacks.push(SharkyStack::default());
+                self.selected_local_stack += 1;
+                return Some(());
+            }
+
+            SharkyInstruction::Return => {
+                let call_frame = self.call_frames.last()?;
+                self.program_counter = call_frame.return_program_address;
+                self.selected_local_stack = call_frame.return_stack;
+                self.call_frames.pop();
+                self.local_stacks.pop();
+                return Some(());
+            }
+
+            SharkyInstruction::ReturnVal(val) => {
+                let mut current_stack = self.get_current_stack()?;
+                let last_val = current_stack.read(val); 
+
+                let call_frame = self.call_frames.last()?;
+                self.selected_local_stack = call_frame.return_stack;
+                self.program_counter = call_frame.return_program_address;
+
+                current_stack = self.get_current_stack()?;
+                current_stack.push(last_val);
+                
+                self.call_frames.pop();
+                self.local_stacks.pop();
+                return Some(());
             }
 
             _ => {}

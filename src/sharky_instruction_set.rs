@@ -6,6 +6,7 @@ pub enum SharkyStackMode {
     Addressed,
     Operative,
     Native,
+    Parameter,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -70,9 +71,10 @@ pub enum SharkyInstruction {
     PopJumpIfNot(usize),
     #[default]
     NoOperation,
-    
+
     // functional operations
     Call(usize),
+    ReturnVal(usize),
     Return,
 
     // thread operations
