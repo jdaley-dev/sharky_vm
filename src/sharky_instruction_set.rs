@@ -1,4 +1,4 @@
-use crate::sharky_memory;
+use crate::{sharky_data_types::*};
 #[derive(Default, Debug, Clone)]
 pub enum SharkyStackMode {
     #[default]
@@ -7,85 +7,87 @@ pub enum SharkyStackMode {
     Operative,
     Native,
     Parameter,
+    Transitional,
 }
+
+#[derive(Default, Debug, Clone)]
+pub enum SharkyParameter<T> {
+    #[default]
+    None,
+    Constant(T),
+    StackIndex(usize),
+}
+
+type SharkyIndexParameter = SharkyParameter<usize>;
 
 #[derive(Default, Debug, Clone)]
 pub enum SharkyInstruction {
     StackMode(SharkyStackMode),
-    SelectStack(usize),
+    SelectStack(SharkyIndexParameter),
     PushStack,
     PopStack,
 
     // push a constant value to the top of the stack
-    ConstantPushMax(sharky_memory::SharkyMax),
-    ConstantPushInt(sharky_memory::SharkyInt),
-    ConstantPushReal(sharky_memory::SharkyReal),
-    ConstantPushByte(sharky_memory::SharkyByte),
-    ConstantPushBool(sharky_memory::SharkyBool),
-    ConstantPushString(sharky_memory::SharkyString),
-    ConstantPushHeapReference(sharky_memory::SharkyHeapAddress),
-    ConstantPushNil,
+    PushMax(SharkyParameter<SharkyMax>),
+    PushInt(SharkyParameter<SharkyInt>),
+    PushReal(SharkyParameter<SharkyReal>),
+    PushByte(SharkyParameter<SharkyByte>),
+    PushBool(SharkyParameter<SharkyBool>),
+    PushHeapReference(SharkyParameter<SharkyHeapAddress>),
+    PushNil,
+
+    ToMax(SharkyIndexParameter),
+    ToByte(SharkyIndexParameter),
+    ToInt(SharkyIndexParameter),
 
     // stack operations
-    Copy(usize),
-    Nilify(usize),
+    PushTransition(SharkyIndexParameter),
+    CopyTransition(SharkyIndexParameter),
+    Copy(SharkyIndexParameter),
+    Nilify(SharkyIndexParameter),
     // All copy operations are (dest, src)
-    CopyTo((usize, usize)),
-    CopySlotTo((usize, usize)),
-    CopySlotToSlot((usize, usize)),
-    CopyToSlot((usize, usize)),
+    Set((SharkyIndexParameter, SharkyIndexParameter)),
     Pop,
     Clear,
 
-    // operative operations    
-    CopyOperativeToStack, // Copies the top of the operative stack to the selected indexed stack.
-
-
     // All operations are a OP b
-    Add((usize, usize)),
-    Subtract((usize, usize)),
-    Multiply((usize, usize)),
-    Divide((usize, usize)),
-    Modulus((usize, usize)),
-    BitLeftShift((usize, usize)),
-    BitRightShift((usize, usize)),
-    BitAnd((usize, usize)),
-    BitXor((usize, usize)),
-    BitOr((usize, usize)),
-    BitNot(usize),
-    Not(usize),
-    And((usize, usize)),
-    Or((usize, usize)),
-    Equals((usize, usize)),
-    NotEquals((usize, usize)),
-    GreaterThan((usize, usize)),
-    LesserThan((usize, usize)),
-    GreaterThanOrEquals((usize, usize)),
-    LesserThanOrEquals((usize, usize)),
+    Add((SharkyIndexParameter, SharkyIndexParameter)),
+    Subtract((SharkyIndexParameter, SharkyIndexParameter)),
+    Multiply((SharkyIndexParameter, SharkyIndexParameter)),
+    Divide((SharkyIndexParameter, SharkyIndexParameter)),
+    Modulus((SharkyIndexParameter, SharkyIndexParameter)),
+    BitLeftShift((SharkyIndexParameter, SharkyIndexParameter)),
+    BitRightShift((SharkyIndexParameter, SharkyIndexParameter)),
+    BitAnd((SharkyIndexParameter, SharkyIndexParameter)),
+    BitXor((SharkyIndexParameter, SharkyIndexParameter)),
+    BitOr((SharkyIndexParameter, SharkyIndexParameter)),
+    BitNot(SharkyIndexParameter),
+    Not(SharkyIndexParameter),
+    And((SharkyIndexParameter, SharkyIndexParameter)),
+    Or((SharkyIndexParameter, SharkyIndexParameter)),
+    Equals((SharkyIndexParameter, SharkyIndexParameter)),
+    NotEquals((SharkyIndexParameter, SharkyIndexParameter)),
+    GreaterThan((SharkyIndexParameter, SharkyIndexParameter)),
+    LesserThan((SharkyIndexParameter, SharkyIndexParameter)),
+    GreaterThanOrEquals((SharkyIndexParameter, SharkyIndexParameter)),
+    LesserThanOrEquals((SharkyIndexParameter, SharkyIndexParameter)),
 
     // Logic operations
-    Jump(usize),
+    Jump(SharkyIndexParameter),
     // conditional jumps are (to, condition)
-    JumpIfNot((usize, usize)),
+    JumpIfNot((SharkyIndexParameter, SharkyIndexParameter)),
     // popjumpifnot checks if the top of the stack is false then if false it pops it, and jumps to the location
-    PopJumpIfNot(usize),
+    PopJumpIfNot(SharkyIndexParameter),
     #[default]
     NoOperation,
 
-    // functional operations
-    Call(usize),
-    ReturnVal(usize),
-    Return,
-
     // thread operations
-    SpawnThread(usize),
-    Await(usize),
-
-
+    SpawnThread(SharkyIndexParameter),
+    Await(SharkyIndexParameter),
 
     // Native operation
     CopyNativeResultToStack,
-    CallNative(usize),
+    CallNative(SharkyIndexParameter),
 }
 
 pub type SharkyProgram = Vec<SharkyInstruction>;
