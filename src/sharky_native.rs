@@ -15,6 +15,10 @@ pub struct SharkyNativeLibrary {
 
 impl SharkyNativeLibrary {
 
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+
     pub fn load_library(library_name: &str, library_location: &Path) -> Option<SharkyNativeLibrary> {
         // Safety Audit: Option<> prevents faulty libraries from being passed along.
         unsafe {
@@ -43,7 +47,8 @@ impl SharkyNativeLibrary {
         if self.symbol_map.contains_key(symbol_name) {
             return None; 
         }
-
+        // Safety audit: Well, no... there's no way I'm aware of to make calling a raw C function safe. The args are always consistent and the function (should) always exist.
+        // Short of a bluescreen the worst we SHOULD get in return is a None. Only time will tell.
         unsafe {
             return if let Ok(symbol) = self.library.get::<SharkyFunctionSignature>(symbol_name.as_bytes()) {
                 let id = self.functions.len();

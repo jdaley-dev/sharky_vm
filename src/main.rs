@@ -7,6 +7,7 @@ use crate::sharky_vm::*;
 use crate::sharky_native::*;
 
 mod sharky_native;
+mod sharky_string;
 mod sharky_data_types;
 mod sharky_memory;
 mod sharky_instruction_set;
@@ -15,9 +16,9 @@ mod sharky_vm;
 fn main() {
 
     if let Some(mut natives) = SharkyNativeLibrary::load_library("test_lib", Path::new("C:\\Users\\jdale\\Working\\_CC\\test_lib\\x64\\Release\\test_lib.dll")) {
-        if let Some(index) = natives.load_symbol(&"test") {
-            if let Some(result) = natives.call(index, vec![4i64.into(), 12i64.into()]) {
-                println!("Add: {result}");
+        if let Some(index) = natives.load_symbol("window") {
+            if let Some(result) = natives.call(index, vec![1920i64.into(), 1080i64.into()]) {
+                println!("Result: {result}");
             }
         }
     }
