@@ -3,6 +3,7 @@ use derive_more::TryInto;
 
 #[derive(Debug, Clone)]
 #[derive(PartialEq, PartialOrd)]
+#[repr(C)]
 pub struct SharkyHeapAddress {
     frame: usize,
     index: usize,
@@ -25,24 +26,25 @@ impl SharkyValue for SharkyBool {}
 impl SharkyValue for SharkyHeapReference {}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, From, TryInto)]
+#[repr(C, u8)]
 pub enum SharkyDataType {
+    Nil,
     Max(SharkyMax),
     Int(SharkyInt),
     Real(SharkyReal),
     Byte(SharkyByte),
     Bool(SharkyBool),
     HeapReference(SharkyHeapReference),
-    Nil
 }
 
 impl std::fmt::Display for SharkyDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SharkyDataType::Max(v)            => write!(f, "{}", v),
-            SharkyDataType::Int(v)            => write!(f, "{}", v),
-            SharkyDataType::Real(v)           => write!(f, "{}", v),
-            SharkyDataType::Byte(v)           => write!(f, "{}", v),
-            SharkyDataType::Bool(v)           => write!(f, "{}", v),
+            SharkyDataType::Max(v)            => write!(f, "Max({})", v),
+            SharkyDataType::Int(v)            => write!(f, "Int({})", v),
+            SharkyDataType::Real(v)           => write!(f, "Real({})", v),
+            SharkyDataType::Byte(v)           => write!(f, "Byte({})", v),
+            SharkyDataType::Bool(v)           => write!(f, "Bool({})", v),
             SharkyDataType::HeapReference(v)  => write!(f, "<ref {}:{}>", v.frame, v.index),
             SharkyDataType::Nil               => write!(f, "nil"),
         }
