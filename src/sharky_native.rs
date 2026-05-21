@@ -15,59 +15,42 @@ pub struct SharkyNativeLibrary {
 
 impl SharkyNativeLibrary {
 
-    pub fn get_name(&self) -> &String {
+    pub fn get_name(&self) -> &str {
         &self.name
     }
 
     pub fn load_library(library_name: &str, library_location: &Path) -> Option<SharkyNativeLibrary> {
         // Safety Audit: Option<> prevents faulty libraries from being passed along.
         unsafe {
-            match Library::new(library_location) {
-                Ok(lib) => 
-                Some(SharkyNativeLibrary { 
-                    name: String::from(library_name), 
-                    location: PathBuf::from(library_location), 
-                    library: lib, 
-                    functions: vec![], 
-                    symbol_map: HashMap::new()
-                }),
-                Err(_) => {
-                    None
-                }
-            }
+            let lib = Library::new(library_location).ok()?;
+            Some(SharkyNativeLibrary { 
+                name: String::from(library_name), 
+                location: PathBuf::from(library_location), 
+                library: lib, 
+                functions: vec![], 
+                symbol_map: HashMap::new()
+            })
         }
     }
 
     pub fn load_symbol(&mut self, symbol_name: &str) -> Option<usize> {
-        if !self.location.exists() {
-            return None;
-        }
-
-
-        if self.symbol_map.contains_key(symbol_name) {
-            return None; 
-        }
-        // Safety audit: Well, no... there's no way I'm aware of to make calling a raw C function safe. The args are always consistent and the function (should) always exist.
-        // Short of a bluescreen the worst we SHOULD get in return is a None. Only time will tell.
+        if let Some(&symbol) = self.symbol_map.get(symbol_name) { return Some(symbol); }
+        // Safety audit: This thoroughly checks if the symbol does actually exist. If it doesn't we get None.
         unsafe {
-            return if let Ok(symbol) = self.library.get::<SharkyFunctionSignature>(symbol_name.as_bytes()) {
-                let id = self.functions.len();
-                self.functions.push(*symbol);
-                self.symbol_map.insert(String::from(symbol_name), id); 
-                Some(id)
-            } else {
-                None
-            }
+            let symbol = self.library.get::<SharkyFunctionSignature>(symbol_name.as_bytes()).ok()?;
+            let id = self.functions.len();
+            self.functions.push(*symbol);
+            self.symbol_map.insert(String::from(symbol_name), id); 
+            Some(id)
         }
     }
 
     pub fn call(&mut self, index: usize, parameters: Vec<SharkyDataType>) -> Option<SharkyDataType> {
-        if index < self.functions.len() {
-            unsafe {
-                Some(self.functions[index](parameters.as_ptr(), parameters.len()))
-            }
-        } else {
-            None
+        // Safety audit: There's no way I'm aware of to make calling a raw C function safe. 
+        // The arguments are always consistent and the function (should) always exist.
+        // Short of a bluescreen the worst we SHOULD get in return is a None. Only time will tell.
+        unsafe {
+            Some(self.functions.get(index)?(parameters.as_ptr(), parameters.len()))
         }
     }
 }
