@@ -52,13 +52,14 @@ fn main() {
         SharkyInstruction::Set((SharkyParameter::Constant(0), SharkyParameter::Constant(2))),
         SharkyInstruction::Pop, 
         SharkyInstruction::Pop, 
-
+        
         // clear the transitional stack for future work.
         SharkyInstruction::StackMode(SharkyStackMode::Transitional),
         SharkyInstruction::Clear,
     ]);
 
-    let mut interpreter = SharkyInterpreter::new(program_arc);
+    let string_pool_arc = Arc::new(SharkyStringPool::new());
+    let mut interpreter = SharkyInterpreter::new(program_arc, string_pool_arc);
     interpreter.run();
     if let Some(stack) = interpreter.get_current_stack() {
         stack.debug_print_stack();

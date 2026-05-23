@@ -25,9 +25,10 @@ impl SharkyValue for SharkyByte {}
 impl SharkyValue for SharkyBool {}
 impl SharkyValue for SharkyHeapReference {}
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, From, TryInto)]
+#[derive(Debug, Default, Clone, PartialEq, PartialOrd, From, TryInto)]
 #[repr(C, u8)]
 pub enum SharkyDataType {
+    #[default]
     Nil,
     Max(SharkyMax),
     Int(SharkyInt),

@@ -1,6 +1,6 @@
 use std::sync::{Arc};
  
-use crate::{sharky_data_types::*, sharky_memory::*, sharky_instruction_set::*};
+use crate::{sharky_data_types::*, sharky_instruction_set::*, sharky_memory::*, sharky_string::SharkyStringPool};
 
 macro_rules! operational_binary_impl {
     ($self:ident, $a:expr, $b:expr, $op:tt) => {
@@ -9,7 +9,7 @@ macro_rules! operational_binary_impl {
                 let param_b = $self.read_parameter($b)?; 
                 let index_a = $self.operational_stack.read(param_a);
                 let index_b = $self.operational_stack.read(param_b);
-                let result = match (index_a, index_b) {
+                let result = match (index_a?, index_b?) {
                     (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a $op b)}
                     (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a $op b)}
                     (SharkyDataType::Byte(a), SharkyDataType::Byte(b)) => {SharkyDataType::Byte(a $op b)}
@@ -23,7 +23,7 @@ macro_rules! operational_binary_impl {
                 let param_b = $self.read_parameter($b)?; 
                 let index_a = $self.operational_stack.read(param_a);
                 let index_b = $self.operational_stack.read(param_b);
-                let result = match (index_a, index_b) {
+                let result = match (index_a?, index_b?) {
                     (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Int(a $op b)}
                     (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Max(a $op b)}
                     (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Real(a $op b)}
@@ -41,7 +41,7 @@ macro_rules! operational_unary_impl {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
                 let index = $self.operational_stack.read(param_a);
-                let result = match index {
+                let result = match index? {
                     SharkyDataType::Int(a) => {SharkyDataType::Int($op a)}
                     SharkyDataType::Max(a) => {SharkyDataType::Max($op a)}
                     SharkyDataType::Byte(a) => {SharkyDataType::Byte($op a)}
@@ -58,8 +58,8 @@ macro_rules! operational_binary_boolean_impl {
                 let param_b = $self.read_parameter($b)?; 
                 let index_a = $self.operational_stack.read(param_a);
                 let index_b = $self.operational_stack.read(param_b);
-                let result = match (index_a, index_b) {
-                    (SharkyDataType::Bool(a), SharkyDataType::Bool(b)) => {SharkyDataType::Bool(a $op b)}
+                let result = match (index_a?, index_b?) {
+                    (SharkyDataType::Bool(a), SharkyDataType::Bool(b)) => {SharkyDataType::Bool(*a $op *b)}
                     (_,_) => {SharkyDataType::Bool(false)} // TODO: return type mismatch interrupt
                 };
                 $self.operational_stack.push(result);
@@ -73,7 +73,7 @@ macro_rules! operational_binary_comparison_impl {
                 let param_b = $self.read_parameter($b)?; 
                 let index_a = $self.operational_stack.read(param_a);
                 let index_b = $self.operational_stack.read(param_b);
-                let result = match (index_a, index_b) {
+                let result = match (index_a?, index_b?) {
                     (SharkyDataType::Int(a), SharkyDataType::Int(b)) => {SharkyDataType::Bool(a $op b)}
                     (SharkyDataType::Max(a), SharkyDataType::Max(b)) => {SharkyDataType::Bool(a $op b)}
                     (SharkyDataType::Real(a), SharkyDataType::Real(b)) => {SharkyDataType::Bool(a $op b)}
@@ -100,7 +100,7 @@ macro_rules! convert_match_impl {
     ($self:ident, $a:expr, $stack:ident, $($pattern:pat => $body:expr),* $(,)?) => {
         let param_a = $self.read_parameter($a)?;
         let $stack = $self.get_active_stack()?;
-        let data = $stack.read(param_a);
+        let data = $stack.read(param_a)?;
         match data {
             $($pattern => $body,)*
             _ => {} // TODO: failed conversion interrupt
@@ -114,35 +114,38 @@ macro_rules! convert_match_impl {
 
 pub struct SharkyInterpreter {
     program_counter: usize,
-    operational_stack: SharkyStack,
-    local_stacks: SharkyStackVec,
+    operational_stack: SharkyDataStack,
+
+    local_stacks: Vec<SharkyDataStack>,
     selected_local_stack: usize,
+    
     program_memory: Arc<SharkyProgram>,
+    string_memory: Arc<SharkyStringPool>,
+
     stack_mode: SharkyStackMode,
-    parameter_stack: SharkyStack,
-    transitional_stack: SharkyStack,
+    parameter_stack: SharkyDataStack,
+    transitional_stack: SharkyDataStack,
+    string_stack: SharkyDataStack,
 }
 
 impl SharkyInterpreter {
 
-    pub fn new(program: Arc<SharkyProgram>) -> SharkyInterpreter {
+    pub fn new(program: Arc<SharkyProgram>, string_pool: Arc<SharkyStringPool>) -> SharkyInterpreter {
         SharkyInterpreter { 
             program_counter: 0, 
-            operational_stack: SharkyStack::default(), 
-            local_stacks: vec![SharkyStack::default()], 
+            operational_stack: SharkyDataStack::default(), 
+            local_stacks: vec![SharkyDataStack::default()], 
             selected_local_stack: 0, 
             program_memory: Arc::clone(&program),
+            string_memory: Arc::clone(&string_pool),
             stack_mode: SharkyStackMode::Indexed,
-            parameter_stack: SharkyStack::default(),
-            transitional_stack: SharkyStack::default(),
+            parameter_stack: SharkyDataStack::default(),
+            transitional_stack: SharkyDataStack::default(),
+            string_stack: SharkyDataStack::default(),
         }
     }
 
-    pub fn get_operational_stack(&mut self) -> &SharkyStack {
-        &self.operational_stack
-    }
-
-    pub fn get_current_stack(&mut self) -> Option<&mut SharkyStack> {
+    pub fn get_current_stack(&mut self) -> Option<&mut SharkyDataStack> {
         if let Some(frame) = self.local_stacks.get_mut(self.selected_local_stack) {
             Some(frame)
         } else {
@@ -150,7 +153,7 @@ impl SharkyInterpreter {
         }
     }
 
-    fn get_active_stack(&mut self) -> Option<&mut SharkyStack> {
+    fn get_active_stack(&mut self) -> Option<&mut SharkyDataStack> {
         match self.stack_mode {
             SharkyStackMode::Indexed => {
                 Some(self.get_current_stack()?)
@@ -164,6 +167,7 @@ impl SharkyInterpreter {
             SharkyStackMode::Transitional => {
                 Some(&mut self.transitional_stack)
             }
+            SharkyStackMode::String => Some(&mut self.string_stack),
             _ => { None }
         }
     }
@@ -175,10 +179,10 @@ impl SharkyInterpreter {
 
     fn read_size(&mut self, index: usize) -> Option<usize> {
         let data = self.get_active_stack()?.read(index);
-        match data {
-            SharkyDataType::Max(a) => Some(a),
-            SharkyDataType::Int(a) => Some(a as usize),
-            SharkyDataType::Byte(a) => Some(a as usize),
+        match data? {
+            SharkyDataType::Max(a) => Some(*a),
+            SharkyDataType::Int(a) => Some(*a as usize),
+            SharkyDataType::Byte(a) => Some(*a as usize),
             _ => None 
         }
     }
@@ -189,7 +193,7 @@ impl SharkyInterpreter {
                 Some(val.into())
             }
             SharkyParameter::StackIndex(index) => {
-                Some(self.get_active_stack()?.read(index).try_into().ok()?)
+                Some((self.get_active_stack()?.read(index)?.clone()).try_into().ok()?)
             }
             SharkyParameter::None => {
                 None
@@ -230,22 +234,22 @@ impl SharkyInterpreter {
             // conversion ops
             SharkyInstruction::ToInt(a) => {
                 convert_match_impl!(self, a, stack, 
-                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Int(v as SharkyInt)),
-                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Int(v as SharkyInt)),
+                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Int(*v as SharkyInt)),
+                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Int(*v as SharkyInt)),
                 );
             }
 
             SharkyInstruction::ToMax(a) => {
                 convert_match_impl!(self, a, stack, 
-                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Max(v as SharkyMax)),
-                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Max(v as SharkyMax)),
+                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Max(*v as SharkyMax)),
+                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Max(*v as SharkyMax)),
                 );
             }
             
             SharkyInstruction::ToByte(a) => {
                 convert_match_impl!(self, a, stack, 
-                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Byte(v as SharkyByte)),
-                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Byte(v as SharkyByte)),
+                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Byte(*v as SharkyByte)),
+                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Byte(*v as SharkyByte)),
                 );
             }
 
@@ -253,20 +257,20 @@ impl SharkyInterpreter {
             SharkyInstruction::PushTransition(a) => {
                 let param = self.read_parameter(a)?;
                 let stack = self.get_active_stack()?;
-                let value = stack.read(param);
+                let value = stack.read(param)?.clone();
                 self.transitional_stack.push(value);
             }
             
             SharkyInstruction::CopyTransition(a) => {
                 let param = self.read_parameter(a)?;
-                let value = self.transitional_stack.read(param);
+                let value = self.transitional_stack.read(param)?.clone();
                 self.get_active_stack()?.push(value);
             }
 
             SharkyInstruction::Copy(a) => {
                 let param_a = self.read_parameter(a)?;
                 if let Some(stack) = self.get_active_stack() {
-                    let data = stack.read(param_a); // TODO: interrupt upon non-existent index
+                    let data = stack.read(param_a)?.clone(); // TODO: interrupt upon non-existent index
                     stack.push(data);
                 }
             }
@@ -282,7 +286,7 @@ impl SharkyInterpreter {
                 let param_a = self.read_parameter(a)?;
                 let param_b = self.read_parameter(b)?;
                 if let Some(stack) = self.get_active_stack() {
-                    stack.set(param_a, stack.read(param_b));
+                    stack.set(param_a, stack.read(param_b)?.clone());
                 }
             }
 
@@ -310,12 +314,12 @@ impl SharkyInterpreter {
             SharkyInstruction::BitAnd((a, b)) => {operational_binary_impl!(self, a, b, &);}
             SharkyInstruction::BitXor((a, b)) => {operational_binary_impl!(self, a, b, ^);}
             SharkyInstruction::BitOr((a, b)) => {operational_binary_impl!(self, a, b, |);}
-            SharkyInstruction::BitNot((a)) => {operational_unary_impl!(self, a, !);}
+            SharkyInstruction::BitNot(a) => {operational_unary_impl!(self, a, !);}
 
             SharkyInstruction::Not(a) => {
                 let param_a = self.read_parameter(a)?;
                 let val = self.operational_stack.read(param_a);
-                let result = match val {
+                let result = match val? {
                     SharkyDataType::Bool(a) => {!a}
                     _ => {false}// TODO: type mismatch interrupt
                 };
@@ -341,7 +345,7 @@ impl SharkyInterpreter {
                 let param_b = self.read_parameter(b)?;
                 let read = self.get_active_stack()?.read(param_b);
                 let mut jump = false;
-                match read {
+                match read? {
                     SharkyDataType::Bool(a) => {
                         jump = !a;
                     }

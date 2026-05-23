@@ -1,4 +1,0 @@
-file test_lib.dll
-lib test_lib
-func add
-func test

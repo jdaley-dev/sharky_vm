@@ -7,6 +7,7 @@ pub enum SharkyStackMode {
     Operative,
     Native,
     Parameter,
+    String,
     Transitional,
 }
 
@@ -80,6 +81,10 @@ pub enum SharkyInstruction {
     PopJumpIfNot(SharkyIndexParameter),
     #[default]
     NoOperation,
+
+    // string operations
+    PopString,
+    PushString,
 
     // thread operations
     SpawnThread(SharkyIndexParameter),
