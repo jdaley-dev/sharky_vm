@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::sharky_data_types::*;
 use crate::sharky_instruction_set::*;
 use crate::sharky_string::SharkyStringPool;
 use crate::sharky_vm::*;
@@ -40,7 +39,6 @@ fn main() {
         SharkyInstruction::PushTransition(SharkyParameter::Constant(0)),
         SharkyInstruction::PushTransition(SharkyParameter::Constant(1)),
         
-        // clear the transitional stack
         SharkyInstruction::StackMode(SharkyStackMode::Operative),
         SharkyInstruction::CopyTransition(SharkyParameter::Constant(0)),
         SharkyInstruction::CopyTransition(SharkyParameter::Constant(1)),

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{sharky_data_types::*};
 #[derive(Default, Debug, Clone)]
 pub enum SharkyStackMode {
@@ -51,6 +53,20 @@ pub enum SharkyInstruction {
     Pop,
     Clear,
 
+    // heap operations
+    CreateDynamicHeap,                                       /// creates a dynamic heap (any type, memory not flat.) address is pushed to the top of the stack.
+    CreateByteHeap,                                          /// creates a byte heap (bytes only, memory flat and contiguous) address is pushed to the top of the stack.
+    CreateIntHeap,                                           /// creates an int heap (ints only, memory flat and contiguous) address is pushed to the top of the stack.
+    CreateMaxHeap,                                           /// creates a max heap (max's only, memory flat and contiguous) address is pushed to the top of the stack.
+    CreateRealHeap,                                          /// creates a real heap (reals only, memory flat and contiguous) address is pushed to the top of the stack.
+    ReadHeap((SharkyIndexParameter, SharkyIndexParameter)),  /// Reads heap address (param_b) to the selected stack address (param_a)
+    WriteHeap((SharkyIndexParameter, SharkyIndexParameter)), /// Writes to heap address (param_a) from the selected stack address (param_b)
+    PushHeap((SharkyIndexParameter, SharkyIndexParameter)),  /// Pushes to heap (param_a) from the selected stack address (param_b)
+    DeleteHeap(SharkyIndexParameter),                        /// Deletes heap (param_a)
+    CloneHeap(SharkyIndexParameter),                         /// Clones heap (param_a) address is pushed to the top of the stack.
+    SliceHeap((SharkyIndexParameter, SharkyIndexParameter)), /// Clones heap from (param_a) to (param_b) to a new heap. address is pushed to the top of the stack.
+    SizeHeap(SharkyIndexParameter),                          /// Reads the size of the heap (param_a) to the top of the stack
+
     // All operations are a OP b
     Add((SharkyIndexParameter, SharkyIndexParameter)),
     Subtract((SharkyIndexParameter, SharkyIndexParameter)),
@@ -81,18 +97,6 @@ pub enum SharkyInstruction {
     PopJumpIfNot(SharkyIndexParameter),
     #[default]
     NoOperation,
-
-    // string operations
-    PopString,
-    PushString,
-
-    // thread operations
-    SpawnThread(SharkyIndexParameter),
-    Await(SharkyIndexParameter),
-
-    // Native operation
-    CopyNativeResultToStack,
-    CallNative(SharkyIndexParameter),
 }
 
 pub type SharkyProgram = Vec<SharkyInstruction>;

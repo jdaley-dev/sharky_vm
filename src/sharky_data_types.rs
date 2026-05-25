@@ -5,8 +5,8 @@ use derive_more::TryInto;
 #[derive(PartialEq, PartialOrd)]
 #[repr(C)]
 pub struct SharkyHeapAddress {
-    frame: usize,
-    index: usize,
+    pub frame: usize,
+    pub index: usize,
 }
 
 pub trait SharkyValue {}

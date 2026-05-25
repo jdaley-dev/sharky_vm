@@ -1,5 +1,6 @@
+#![allow(dead_code)]
 use libloading::*;
-use std::{collections::HashMap, ops::Deref, path::{Path, PathBuf}, sync::{Mutex, OnceLock}};
+use std::{collections::HashMap, path::{Path, PathBuf}};
 
 use crate::sharky_data_types::SharkyDataType;
 
