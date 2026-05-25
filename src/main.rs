@@ -31,7 +31,7 @@ fn main() {
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
         
         // load into the global stack
-        SharkyInstruction::StackMode(SharkyStackMode::Indexed),
+        SharkyInstruction::SetStackMode(SharkyStackMode::Indexed),
         SharkyInstruction::PushInt(SharkyParameter::Constant(4)),
         SharkyInstruction::PushInt(SharkyParameter::Constant(7)),
 
@@ -39,27 +39,25 @@ fn main() {
         SharkyInstruction::PushTransition(SharkyParameter::Constant(0)),
         SharkyInstruction::PushTransition(SharkyParameter::Constant(1)),
         
-        SharkyInstruction::StackMode(SharkyStackMode::Operative),
+        SharkyInstruction::SetStackMode(SharkyStackMode::Operative),
         SharkyInstruction::CopyTransition(SharkyParameter::Constant(0)),
         SharkyInstruction::CopyTransition(SharkyParameter::Constant(1)),
         SharkyInstruction::Add((SharkyParameter::Constant(0), SharkyParameter::Constant(1))),
         SharkyInstruction::PushTransition(SharkyParameter::Constant(2)),
 
-        SharkyInstruction::StackMode(SharkyStackMode::Indexed),
+        SharkyInstruction::SetStackMode(SharkyStackMode::Indexed),
         SharkyInstruction::CopyTransition(SharkyParameter::Constant(2)),
         SharkyInstruction::Set((SharkyParameter::Constant(0), SharkyParameter::Constant(2))),
         SharkyInstruction::Pop, 
         SharkyInstruction::Pop, 
         
         // clear the transitional stack for future work.
-        SharkyInstruction::StackMode(SharkyStackMode::Transitional),
+        SharkyInstruction::SetStackMode(SharkyStackMode::Transitional),
         SharkyInstruction::Clear,
     ]);
 
     let string_pool_arc = Arc::new(SharkyStringPool::new());
     let mut interpreter = SharkyInterpreter::new(program_arc, string_pool_arc);
     interpreter.run();
-    if let Some(stack) = interpreter.get_current_stack() {
-        stack.debug_print_stack();
-    }
+    interpreter.print_debug();
 }

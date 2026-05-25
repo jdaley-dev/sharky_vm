@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::sync::{Arc}; 
+use std::sync::{Arc, RwLock}; 
 use crate::{sharky_data_types::*, sharky_instruction_set::*, sharky_memory::*, sharky_string::SharkyStringPool};
 
 #[macro_use] mod sharky_vm_macros;
@@ -8,19 +8,95 @@ use crate::{sharky_data_types::*, sharky_instruction_set::*, sharky_memory::*, s
  * Switch local stack array to non_empty to prevent the representation of an error state.
  */
 
-pub struct SharkyInterpreter {
-    program_counter: usize,
-
+#[derive(Default)]
+pub struct SharkyMemoryLayout {
     transitional_stack: SharkyDataStack,
     local_stacks: Vec<SharkyDataStack>,
     operational_stack: SharkyDataStack,
     parameter_stack: SharkyDataStack,
     string_stack: SharkyDataStack,
-
     selected_local_stack: usize,
     stack_mode: SharkyStackMode,
+}
 
-    
+impl SharkyMemoryLayout {
+    pub fn new() -> Self { 
+        let mut result = Self::default();
+        result.local_stacks.push(SharkyDataStack::default()); 
+        result 
+    }
+
+    pub fn set_stack_mode(&mut self, mode: SharkyStackMode) {
+        self.stack_mode = mode;
+    }
+
+    pub fn new_local_stack(&mut self) {
+        self.local_stacks.push(SharkyDataStack::default());
+    }
+
+    pub fn pop_local_stack(&mut self) {
+        self.local_stacks.pop();
+    }
+
+    pub fn select_local_stack(&mut self, index: usize) {
+        self.selected_local_stack = index; 
+    }
+
+    pub fn get_transitional_stack(&mut self) -> &mut SharkyDataStack {
+        &mut self.transitional_stack
+    }
+
+    pub fn get_operational_stack(&mut self) -> &mut SharkyDataStack {
+        &mut self.operational_stack
+    }
+
+    pub fn print_debug(&self) -> Option<()> {
+        let mut count = 0;
+        for i in self.local_stacks.iter() {
+            println!("STACK {count}");
+            i.debug_print_stack();
+            count += 1;
+        }
+        Some(())
+    }
+
+    pub fn get_active_stack_mut(&mut self) -> Option<&mut SharkyDataStack> {
+        match self.stack_mode {
+            SharkyStackMode::Indexed => {
+                let selected = self.selected_local_stack;
+                self.local_stacks.get_mut(selected)
+            }
+            SharkyStackMode::Transitional => {
+                Some(&mut self.operational_stack)
+            }
+            SharkyStackMode::Operative => {
+                Some(&mut self.operational_stack)
+            }
+
+            _ => None,
+        }
+    }
+
+    pub fn get_active_stack(&self) -> Option<&SharkyDataStack> {
+                match self.stack_mode {
+            SharkyStackMode::Indexed => {
+                let selected = self.selected_local_stack;
+                self.local_stacks.get(selected)
+            }
+            SharkyStackMode::Transitional => {
+                Some(&self.operational_stack)
+            }
+            SharkyStackMode::Operative => {
+                Some(&self.operational_stack)
+            }
+            _ => None,
+        }
+    }
+}
+
+pub struct SharkyInterpreter {
+    memory: RwLock<SharkyMemoryLayout>,
+    program_counter: usize,
     program_memory: Arc<SharkyProgram>,
     string_memory: Arc<SharkyStringPool>,
 }
@@ -29,50 +105,15 @@ impl SharkyInterpreter {
 
     pub fn new(program: Arc<SharkyProgram>, string_pool: Arc<SharkyStringPool>) -> SharkyInterpreter {
         SharkyInterpreter { 
+            memory: RwLock::new(SharkyMemoryLayout::new()),
             program_counter: 0, 
-            operational_stack: SharkyDataStack::default(), 
-            local_stacks: vec![SharkyDataStack::default()], 
-            selected_local_stack: 0, 
             program_memory: Arc::clone(&program),
             string_memory: Arc::clone(&string_pool),
-            stack_mode: SharkyStackMode::Indexed,
-            parameter_stack: SharkyDataStack::default(),
-            transitional_stack: SharkyDataStack::default(),
-            string_stack: SharkyDataStack::default(),
-        }
-    }
-
-    pub fn get_current_stack(&mut self) -> Option<&mut SharkyDataStack> {
-        if let Some(frame) = self.local_stacks.get_mut(self.selected_local_stack) {
-            Some(frame)
-        } else {
-            None
-        }
-    }
-
-    //pub fn collect_heap_
-
-    fn get_active_stack(&mut self) -> Option<&mut SharkyDataStack> {
-        match self.stack_mode {
-            SharkyStackMode::Indexed => {
-                Some(self.get_current_stack()?)
-            }
-            SharkyStackMode::Operative => {
-                Some(&mut self.operational_stack)
-            }
-            SharkyStackMode::Parameter => {
-                Some(&mut self.parameter_stack)
-            }
-            SharkyStackMode::Transitional => {
-                Some(&mut self.transitional_stack)
-            }
-            SharkyStackMode::String => Some(&mut self.string_stack),
-            _ => { None }
         }
     }
 
     fn push_constant(&mut self, value: SharkyDataType) -> Option<()> {
-        self.get_active_stack()?.push(value);
+        self.memory.write().ok()?.get_active_stack_mut()?.push(value);
         Some(())
     }
 
@@ -82,12 +123,18 @@ impl SharkyInterpreter {
                 Some(val.into())
             }
             SharkyParameter::StackIndex(index) => {
-                Some((self.get_active_stack()?.read(index)?.clone()).try_into().ok()?)
+                Some((self.memory.read().ok()?.get_active_stack()?.read(index)?.clone()).try_into().ok()?)
             }
             SharkyParameter::None => {
                 None
             }
         }
+    }
+
+    pub fn print_debug(&mut self) -> Option<()> {
+        let memory = self.memory.read().ok()?;
+        memory.print_debug();
+        Some(())
     }
 
     fn interpret(&mut self) -> Option<()> {
@@ -97,77 +144,81 @@ impl SharkyInterpreter {
             .get(self.program_counter)?
             .clone();
         
+        let prev_counter = self.program_counter;
+
         self.interpret_stackops(current_instruction.clone())?;
         self.interpret_constantops(current_instruction.clone())?;
         self.interpret_conversionops(current_instruction.clone())?;
         self.interpret_operativeops(current_instruction.clone())?;
         self.interpret_logicops(current_instruction.clone())?;
         self.interpret_heapops(current_instruction.clone())?;
+        
+        if self.program_counter == prev_counter {
+            self.program_counter += 1;
+        }
 
-        self.program_counter += 1;
         Some(())
     }
 
     fn interpret_stackops(&mut self, op: SharkyInstruction) -> Option<()> {
         match op {
-            SharkyInstruction::StackMode(mode) =>
-                self.stack_mode = mode,
+            SharkyInstruction::SetStackMode(mode) =>
+                self.memory.write().ok()?.set_stack_mode(mode),
             
-            SharkyInstruction::SelectStack(stack) =>
-                self.selected_local_stack = self.read_parameter(stack)?, // TODO: raise interrupt upon illegal stack selection
+            SharkyInstruction::SelectLocalStack(stack) => {
+                let parameter = self.read_parameter(stack)?;
+                self.memory.write().ok()?.select_local_stack(parameter) // TODO: raise interrupt upon illegal stack selection
+            }
+            SharkyInstruction::PushLocalStack =>
+                self.memory.write().ok()?.new_local_stack(),
             
-            SharkyInstruction::PushStack =>
-                self.local_stacks.push(SharkyStack::default()),
-            
-            SharkyInstruction::PopStack =>
-                { let _ = self.local_stacks.pop(); } // TODO: raise interrupt upon trying to drop the first stack
+            SharkyInstruction::PopLocalStack =>
+                self.memory.write().ok()?.pop_local_stack(),
             
             SharkyInstruction::PushTransition(a) => {
                 let param = self.read_parameter(a)?;
-                let stack = self.get_active_stack()?;
+                let mut memory = self.memory.write().ok()?;
+                let stack = memory.get_active_stack()?;
                 let value = stack.read(param)?.clone();
-                self.transitional_stack.push(value);
+                memory.get_transitional_stack().push(value);
             }
             
             SharkyInstruction::CopyTransition(a) => {
                 let param = self.read_parameter(a)?;
-                let value = self.transitional_stack.read(param)?.clone();
-                self.get_active_stack()?.push(value);
+                let mut memory = self.memory.write().ok()?;
+                let value = memory.get_transitional_stack().read(param)?.clone();
+                memory.get_active_stack_mut()?.push(value);
             }
 
             SharkyInstruction::Copy(a) => {
                 let param_a = self.read_parameter(a)?;
-                if let Some(stack) = self.get_active_stack() {
-                    let data = stack.read(param_a)?.clone(); // TODO: interrupt upon non-existent index
-                    stack.push(data);
-                }
+                let mut memory = self.memory.write().ok()?;
+                let stack = memory.get_active_stack_mut()?;
+                let data = stack.read(param_a)?.clone(); // TODO: interrupt upon non-existent index
+                stack.push(data);
             }
 
             SharkyInstruction::Nilify(a) => {
                 let param_a = self.read_parameter(a)?;
-                if let Some(stack) = self.get_active_stack() {
-                    stack.set(param_a, SharkyDataType::Nil);// TODO: interrupt upon non-existent index
-                }
+                let mut memory = self.memory.write().ok()?;
+                let stack = memory.get_active_stack_mut()?;
+                stack.set(param_a, SharkyDataType::Nil);// TODO: interrupt upon non-existent index
             }
 
             SharkyInstruction::Set((a, b)) => {
                 let param_a = self.read_parameter(a)?;
                 let param_b = self.read_parameter(b)?;
-                if let Some(stack) = self.get_active_stack() {
-                    stack.set(param_a, stack.read(param_b)?.clone());
-                }
+                let mut memory = self.memory.write().ok()?;
+                let stack = memory.get_active_stack_mut()?;
+                stack.set(param_a, stack.read(param_b)?.clone());
             }
 
             SharkyInstruction::Pop => {
-                if let Some(stack) = self.get_active_stack() {
-                    stack.pop();
-                }
+                self.memory.write().ok()?.get_active_stack_mut()?.pop();
             }
 
             SharkyInstruction::Clear => {
-                if let Some(stack) = self.get_active_stack() {
-                    stack.clear();
-                }
+                self.memory.write().ok()?.get_active_stack_mut()?.clear();
             }
             _ => {}
         }
@@ -232,12 +283,14 @@ impl SharkyInterpreter {
 
             SharkyInstruction::Not(a) => {
                 let param_a = self.read_parameter(a)?;
-                let val = self.operational_stack.read(param_a);
+                let mut memory = self.memory.write().ok()?;
+                let opstack = memory.get_operational_stack();
+                let val = opstack.read(param_a);
                 let result = match val? {
                     SharkyDataType::Bool(a) => {!a}
                     _ => {false}// TODO: type mismatch interrupt
                 };
-                self.operational_stack.push(SharkyDataType::Bool(result));
+                opstack.push(SharkyDataType::Bool(result));
             }
 
             SharkyInstruction::And((a, b)) => {operational_binary_boolean_impl!(self, a, b, &&);}
@@ -258,13 +311,14 @@ impl SharkyInterpreter {
         match op {
             SharkyInstruction::Jump(a) => {
                 self.program_counter = self.read_parameter(a)?;
-                return Some(());
+                return None;
             }            
 
             SharkyInstruction::JumpIfNot((a, b)) => {
                 let param_a = self.read_parameter(a)?;
                 let param_b = self.read_parameter(b)?;
-                let read = self.get_active_stack()?.read(param_b);
+                let mut memory = self.memory.write().ok()?;
+                let read = memory.get_active_stack_mut()?.read(param_b);
                 let mut jump = false;
                 match read? {
                     SharkyDataType::Bool(a) => {
@@ -274,7 +328,7 @@ impl SharkyInterpreter {
                 }
                 if jump {
                     self.program_counter = param_a;
-                    return Some(());
+                    return None;
                 }
             }
             _ => {}

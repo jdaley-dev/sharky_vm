@@ -51,11 +51,12 @@ impl<T: TypicalData> SharkyStack<T> {
 impl<T: TypicalData + Display> SharkyStack<T> {
         pub fn debug_print_stack(&self) {
         let mut point = 0;
-        println!("--- SHARKY STACK DEBUG PRINT ---");
+        eprintln!("--- SHARKY STACK DEBUG PRINT ---");
         for i in self.stack.iter() {
-            println!("{point} - [{i}]\n--------------------------------");
+            eprintln!("{point} - [{i}]\n--------------------------------");
             point += 1;
         }
+        
     }
 }
 

@@ -25,10 +25,10 @@ type SharkyIndexParameter = SharkyParameter<usize>;
 
 #[derive(Default, Debug, Clone)]
 pub enum SharkyInstruction {
-    StackMode(SharkyStackMode),
-    SelectStack(SharkyIndexParameter),
-    PushStack,
-    PopStack,
+    SetStackMode(SharkyStackMode),
+    SelectLocalStack(SharkyIndexParameter),
+    PushLocalStack,
+    PopLocalStack,
 
     // push a constant value to the top of the stack
     PushMax(SharkyParameter<SharkyMax>),
