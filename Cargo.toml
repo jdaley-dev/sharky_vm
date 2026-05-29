@@ -7,3 +7,4 @@ edition = "2024"
 derive_more = {version = "1", features = ["from", "into", "try_into"]}
 libloading = "0.8"
 parking_lot = "0.12"
+slab = "0.4"

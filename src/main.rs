@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::sharky_app::SharkyApp;
 use crate::sharky_instruction_set::*;
 use crate::sharky_string::SharkyStringPool;
 use crate::sharky_vm::*;
@@ -12,6 +14,7 @@ mod sharky_data_types;
 mod sharky_memory;
 mod sharky_instruction_set;
 mod sharky_vm;
+mod sharky_app;
 
 fn main() {
 
@@ -32,8 +35,8 @@ fn main() {
         
         // load into the global stack
         SharkyInstruction::SetStackMode(SharkyStackMode::Indexed),
-        SharkyInstruction::PushInt(SharkyParameter::Constant(4)),
-        SharkyInstruction::PushInt(SharkyParameter::Constant(7)),
+        SharkyInstruction::PushInt(SharkyParameter::Constant(123)),
+        SharkyInstruction::PushInt(SharkyParameter::Constant(414)),
 
         // copy value into the transition stack
         SharkyInstruction::PushTransition(SharkyParameter::Constant(0)),
@@ -56,8 +59,11 @@ fn main() {
         SharkyInstruction::Clear,
     ]);
 
-    let string_pool_arc = Arc::new(SharkyStringPool::new());
-    let mut interpreter = SharkyInterpreter::new(program_arc, string_pool_arc);
-    interpreter.run();
-    interpreter.print_debug();
+
+    let sharky_app = SharkyApp::new_arc();
+    SharkyApp::start_garbage_collector(sharky_app.clone());
+    for _ in 0..100 {
+        sharky_app.write().unwrap().spawn_interpreter(Arc::clone(&program_arc));
+    }
+    SharkyApp::await_processes(sharky_app);
 }

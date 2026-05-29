@@ -1,5 +1,6 @@
 #![allow(dead_code)]
-use std::sync::{Arc, RwLock}; 
+use std::sync::{Arc, RwLock, RwLockReadGuard}; 
+
 use crate::{sharky_data_types::*, sharky_instruction_set::*, sharky_memory::*, sharky_string::SharkyStringPool};
 
 #[macro_use] mod sharky_vm_macros;
@@ -14,6 +15,7 @@ pub struct SharkyMemoryLayout {
     local_stacks: Vec<SharkyDataStack>,
     operational_stack: SharkyDataStack,
     parameter_stack: SharkyDataStack,
+    heap_reference_stack: SharkyDataStack,
     string_stack: SharkyDataStack,
     selected_local_stack: usize,
     stack_mode: SharkyStackMode,
@@ -22,8 +24,28 @@ pub struct SharkyMemoryLayout {
 impl SharkyMemoryLayout {
     pub fn new() -> Self { 
         let mut result = Self::default();
-        result.local_stacks.push(SharkyDataStack::default()); 
+        result.local_stacks.push(SharkyDataStack::default()); // initialize the local stacks with a minimum of one stack.
         result 
+    }
+
+    pub fn check_for_address_in_stacks(&self, address: SharkyHeapFrameIndex) -> bool {
+        let heap_search = |data: &SharkyDataType| {
+            match data {
+                SharkyDataType::HeapReference(href) => {
+                    href.frame == address
+                }
+                _ => false
+            }
+        };
+        // local stacks search
+        for stack in self.local_stacks.iter() {
+            if stack.search(heap_search) { return true; }
+        }
+        if self.transitional_stack.search(heap_search) { return true; }
+        if self.operational_stack.search(heap_search) { return true; }
+        if self.parameter_stack.search(heap_search) { return true; }
+
+        false
     }
 
     pub fn set_stack_mode(&mut self, mode: SharkyStackMode) {
@@ -67,7 +89,7 @@ impl SharkyMemoryLayout {
                 self.local_stacks.get_mut(selected)
             }
             SharkyStackMode::Transitional => {
-                Some(&mut self.operational_stack)
+                Some(&mut self.transitional_stack)
             }
             SharkyStackMode::Operative => {
                 Some(&mut self.operational_stack)
@@ -98,20 +120,30 @@ pub struct SharkyInterpreter {
     memory: RwLock<SharkyMemoryLayout>,
     program_counter: usize,
     program_memory: Arc<SharkyProgram>,
-    string_memory: Arc<SharkyStringPool>,
+    running: bool,
 }
+
+pub type SharkySyncedInterpreter = Arc<RwLock<SharkyInterpreter>>;
 
 impl SharkyInterpreter {
 
-    pub fn new(program: Arc<SharkyProgram>, string_pool: Arc<SharkyStringPool>) -> SharkyInterpreter {
+    pub fn new(program: Arc<SharkyProgram>) -> SharkyInterpreter {
         SharkyInterpreter { 
             memory: RwLock::new(SharkyMemoryLayout::new()),
             program_counter: 0, 
             program_memory: Arc::clone(&program),
-            string_memory: Arc::clone(&string_pool),
+            running: true,
         }
     }
 
+    pub fn has_reference(&self, address: SharkyHeapFrameIndex) -> bool {
+        self.memory.read().unwrap().check_for_address_in_stacks(address)
+    }
+
+    pub fn new_arc(program: Arc<SharkyProgram>) -> SharkySyncedInterpreter {
+        Arc::new(RwLock::new(SharkyInterpreter::new(program)))
+    }
+ 
     fn push_constant(&mut self, value: SharkyDataType) -> Option<()> {
         self.memory.write().ok()?.get_active_stack_mut()?.push(value);
         Some(())
@@ -137,8 +169,18 @@ impl SharkyInterpreter {
         Some(())
     }
 
-    fn interpret(&mut self) -> Option<()> {
+    pub fn get_memory(&self) -> Option<RwLockReadGuard<'_, SharkyMemoryLayout>> {
+        self.memory.read().ok()
+    }
 
+    pub fn is_running(&self) -> bool {
+        self.running
+    }
+
+    pub fn interpret(&mut self) -> Option<()> {
+        if !self.is_running() {
+            return Some(())
+        }
         let current_instruction = self.program_memory
             .as_ref()
             .get(self.program_counter)?
@@ -157,6 +199,10 @@ impl SharkyInterpreter {
             self.program_counter += 1;
         }
 
+        let program_memory_length = self.program_memory.as_ref().len();
+        if self.program_counter >= program_memory_length {
+            self.running = false;
+        }
         Some(())
     }
 
@@ -352,14 +398,6 @@ impl SharkyInterpreter {
             SharkyInstruction::SliceHeap((a, b)) => {} 
             SharkyInstruction::SizeHeap(a) => {}
             _ => {}
-        }
-        Some(())
-    }
-
-    pub fn run(&mut self) -> Option<()> {
-        let program_memory_length = self.program_memory.as_ref().len();
-        while self.program_counter < program_memory_length {
-            self.interpret();
         }
         Some(())
     }

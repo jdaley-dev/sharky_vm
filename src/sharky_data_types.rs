@@ -9,6 +9,8 @@ pub struct SharkyHeapAddress {
     pub index: usize,
 }
 
+pub type SharkyHeapFrameIndex = usize;
+
 pub trait SharkyValue {}
 
 pub type SharkyMax = usize;
