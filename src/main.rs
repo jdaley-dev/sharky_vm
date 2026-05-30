@@ -32,38 +32,8 @@ fn main() {
     println!("Saved String: {string}");
 
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
-        
-        // load into the global stack
-        SharkyInstruction::SetStackMode(SharkyStackMode::Indexed),
-        SharkyInstruction::PushInt(SharkyParameter::Constant(123)),
-        SharkyInstruction::PushInt(SharkyParameter::Constant(414)),
-
-        // copy value into the transition stack
-        SharkyInstruction::PushTransition(SharkyParameter::Constant(0)),
-        SharkyInstruction::PushTransition(SharkyParameter::Constant(1)),
-        
-        SharkyInstruction::SetStackMode(SharkyStackMode::Operative),
-        SharkyInstruction::CopyTransition(SharkyParameter::Constant(0)),
-        SharkyInstruction::CopyTransition(SharkyParameter::Constant(1)),
-        SharkyInstruction::Add((SharkyParameter::Constant(0), SharkyParameter::Constant(1))),
-        SharkyInstruction::PushTransition(SharkyParameter::Constant(2)),
-
-        SharkyInstruction::SetStackMode(SharkyStackMode::Indexed),
-        SharkyInstruction::CopyTransition(SharkyParameter::Constant(2)),
-        SharkyInstruction::Set((SharkyParameter::Constant(0), SharkyParameter::Constant(2))),
-        SharkyInstruction::Pop, 
-        SharkyInstruction::Pop, 
-        
-        // clear the transitional stack for future work.
-        SharkyInstruction::SetStackMode(SharkyStackMode::Transitional),
-        SharkyInstruction::Clear,
+        SharkyInstruction::CreateDynamicHeap, // 0: Heap reference to top of stack.
     ]);
 
-
-    let sharky_app = SharkyApp::new_arc();
-    SharkyApp::start_garbage_collector(sharky_app.clone());
-    for _ in 0..100 {
-        sharky_app.write().unwrap().spawn_interpreter(Arc::clone(&program_arc));
-    }
-    SharkyApp::await_processes(sharky_app);
+    SharkyApp::init(program_arc);
 }
