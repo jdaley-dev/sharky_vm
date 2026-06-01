@@ -3,7 +3,7 @@ macro_rules! operational_binary_impl {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
                 let param_b = $self.read_parameter($b)?; 
-                let mut memory = $self.memory.write().ok()?;
+                let mut memory = $self.memory.write();
                 let opstack = memory.get_operational_stack();
                 let index_a = opstack.read(param_a);
                 let index_b = opstack.read(param_b);
@@ -19,7 +19,7 @@ macro_rules! operational_binary_impl {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
                 let param_b = $self.read_parameter($b)?; 
-                let mut memory = $self.memory.write().ok()?;
+                let mut memory = $self.memory.write();
                 let opstack = memory.get_operational_stack();
                 let index_a = opstack.read(param_a);
                 let index_b = opstack.read(param_b);
@@ -40,7 +40,7 @@ macro_rules! operational_unary_impl {
     ($self:ident, $a:expr, $op:tt) => {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
-                let mut memory = $self.memory.write().ok()?;
+                let mut memory = $self.memory.write();
                 let  opstack = memory.get_operational_stack();
                 let index = opstack.read(param_a);
                 let result = match index? {
@@ -58,7 +58,7 @@ macro_rules! operational_binary_boolean_impl {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
                 let param_b = $self.read_parameter($b)?; 
-                let mut memory = $self.memory.write().ok()?;
+                let mut memory = $self.memory.write();
                 let opstack = memory.get_operational_stack();
                 let index_a = opstack.read(param_a);
                 let index_b = opstack.read(param_b);
@@ -75,7 +75,7 @@ macro_rules! operational_binary_comparison_impl {
                 // TODO: raise interrupt upon adding between non-existent stack elements
                 let param_a = $self.read_parameter($a)?;
                 let param_b = $self.read_parameter($b)?; 
-                let mut memory = $self.memory.write().ok()?;
+                let mut memory = $self.memory.write();
                 let opstack = memory.get_operational_stack();
                 let index_a = opstack.read(param_a);
                 let index_b = opstack.read(param_b);
@@ -105,7 +105,7 @@ macro_rules! push_constant {
 macro_rules! convert_match_impl {
     ($self:ident, $a:expr, $stack:ident, $($pattern:pat => $body:expr),* $(,)?) => {
         let param_a = $self.read_parameter($a)?;
-        let mut memory = $self.memory.write().ok()?;
+        let mut memory = $self.memory.write();
         let $stack = memory.get_active_stack_mut()?;
         let data = $stack.read(param_a)?;
         match data {
