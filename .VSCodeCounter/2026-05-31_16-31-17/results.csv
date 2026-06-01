@@ -1,0 +1,14 @@
+"filename", "language", "C", "Rust", "Markdown", "Jaw", "Python", "comment", "blank", "total"
+"c:\Users\jdale\Working\sharky-vm\README.md", "Markdown", 0, 0, 2, 0, 0, 0, 1, 3
+"c:\Users\jdale\Working\sharky-vm\jaw_design\main.jaw", "Jaw", 0, 0, 0, 71, 0, 11, 21, 103
+"c:\Users\jdale\Working\sharky-vm\src\main.rs", "Rust", 0, 57, 0, 0, 0, 0, 10, 67
+"c:\Users\jdale\Working\sharky-vm\src\sharky_app.rs", "Rust", 0, 86, 0, 0, 0, 0, 19, 105
+"c:\Users\jdale\Working\sharky-vm\src\sharky_data_types.rs", "Rust", 0, 121, 0, 0, 0, 7, 19, 147
+"c:\Users\jdale\Working\sharky-vm\src\sharky_memory.rs", "Rust", 0, 199, 0, 0, 0, 0, 44, 243
+"c:\Users\jdale\Working\sharky-vm\src\sharky_native.rs", "Rust", 0, 44, 0, 0, 0, 5, 8, 57
+"c:\Users\jdale\Working\sharky-vm\src\sharky_string.rs", "Rust", 0, 20, 0, 0, 0, 0, 7, 27
+"c:\Users\jdale\Working\sharky-vm\src\sharky_vm.rs", "Rust", 0, 280, 0, 0, 0, 4, 53, 337
+"c:\Users\jdale\Working\sharky-vm\src\sharky_vm\sharky_vm_macros.rs", "Rust", 0, 104, 0, 0, 0, 6, 6, 116
+"c:\Users\jdale\Working\sharky-vm\test_native\build.py", "Python", 0, 0, 0, 0, 9, 0, 3, 12
+"c:\Users\jdale\Working\sharky-vm\test_native\main.c", "C", 0, 0, 0, 0, 0, 0, 1, 1
+"Total", "-", 0, 911, 2, 71, 9, 33, 192, 1218

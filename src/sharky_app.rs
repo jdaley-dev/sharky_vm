@@ -1,136 +1,84 @@
-use std::{sync::{Arc, RwLock}, thread::JoinHandle, time::Instant};
-use slab::Slab;
+use std::{collections::HashMap, path::Path, sync::Arc, thread::JoinHandle, time::Instant};
+use parking_lot::RwLock;
+use slab::{Iter, Slab};
 
-use crate::{sharky_memory::*, sharky_data_types::*, sharky_vm::*, sharky_instruction_set::*};
+use crate::{sharky_data_types::*, sharky_memory::*, sharky_native::SharkyNativeLibrary, sharky_vm::*};
 
-const GC_COLLECTION_COUNT: usize = 1;
+const GC_COLLECTION_COUNT: usize = 128;
 
-struct SharkyInterpreterThread {
-    pub interpreter: SharkySyncedInterpreter,
+struct SharkyTask {
+    pub vm: SharkySyncedVM,
     pub thread: JoinHandle<()>
 }
 
-impl SharkyInterpreterThread {
-    pub fn new(synced: SharkySyncedApp, program: Arc<SharkyProgram>) -> Self {
-        let interpreter = SharkyInterpreter::new_arc(program, synced.clone());
-
-        let return_interpreter = Arc::clone(&interpreter);
+impl SharkyTask {
+    pub fn new_subvm(vm: SharkySyncedVM) -> Self {
+        let out_vm = Arc::clone(&vm);
 
         let thread = std::thread::spawn(move || {
-            let inter = Arc::clone(&interpreter);
+            let personal_vm = Arc::clone(&vm);
             loop {
-                let mut handle = inter.write().unwrap();
+                let mut handle = personal_vm.write();
                 if !handle.is_running() { break; }
                 handle.interpret();
             }
-            inter.read().unwrap().print_debug();
+            personal_vm.write().print_debug();
         });
 
-        SharkyInterpreterThread { 
-            interpreter: return_interpreter, 
+        SharkyTask { 
+            vm: out_vm, 
             thread: thread  
         }
     }
 
+    pub fn new(heap: &SharkyHeap, program: Arc<SharkyProgram>, task_pool: &SharkyTaskPool) -> Self {
+        let vm = SharkyVM::new_arc(program, heap, task_pool);
+        Self::new_subvm(vm)
+    }
+
+
     pub fn complete(&self) -> bool {
-        !self.interpreter.read().unwrap().is_running() &&
         self.thread.is_finished()
     }
 }
 
-#[derive(Default)]
-pub struct SharkyApp {
-    heap: SharkySyncedHeapStack,
-    interpreters: Slab<SharkyInterpreterThread>,
-    allocation_count: usize,
-}
+#[derive(Default, Clone)]
+pub struct SharkyTaskPool {
+    tasks: SharkySynced<Slab<SharkyTask>>,
+} 
 
-pub type SharkySyncedApp = Arc<RwLock<SharkyApp>>;
+impl SharkyTaskPool {
+    pub fn new() -> Self {Self::default()}
 
-impl SharkyApp {
-    pub fn new_arc() -> SharkySyncedApp {
-        Arc::new(RwLock::new(Self::default()))
+    pub fn spawn_task(&mut self, heap: &SharkyHeap, program: Arc<SharkyProgram>) -> usize {
+        self.tasks.write().insert(SharkyTask::new(heap, program, self))
     }
 
-    fn start_garbage_collector(app: SharkySyncedApp) { 
-        /*
-         * --- Garbage collection basic implementation ---
-         * - Collect all dead/finished interpreters, remove them from the collector pool.
-         * - Track the allocation count from all threads, if we exceed the threshold initialize a garbage collection.
-         * - Collection is just searching each stack for a reference pointing to each heap. If a heap with no references
-         * it's collected and we move on. 
-        */
-        let arc_self = app.clone();
-        std::thread::spawn(move || {
-            loop {
-            { // block the write guard.
-                let mut this = arc_self.write().unwrap();
-                println!("Collecting interpreters"); 
-                this.collect_dead_interpreters();
-                if this.allocation_count >= GC_COLLECTION_COUNT {
-                    println!("Deallocating!");
-                    this.heap.read().unwrap().iter().for_each(|cell| {
-                        if let Some(stack_lock) = cell {
-                            let stack = stack_lock.read().unwrap();
-                            stack.debug_print_stack();
-                        }
-                    });
-                    this.allocation_count = 0; // restart the count 
-                    let mut heap = this.heap.write().unwrap();
-                    for i in 0..heap.len() {
-                        if !this.check_for_heap_ref(i) {
-                            let frame = &mut heap[i];
-                            // NOTE: this SHOULD be safe, because we take a write lock on the vector so setting to 
-                            // None should never effect users of the data given you would still need a read lock 
-                            // on the vector preventing this operation. BUT any issues should be checked here.
-                            *frame = None;
-                        }
-                    }
-                }
-            }
-            
-            std::thread::yield_now();
-        }
-        });
+    pub fn spawn_subtask(&mut self, vm: SharkySyncedVM) -> usize {
+        self.tasks.write().insert(SharkyTask::new_subvm(vm))
     }
 
-    fn check_for_heap_ref(&self, address: SharkyHeapFrameIndex) -> bool {
-        for (_, interpreter) in self.interpreters.iter() {
-            if interpreter.interpreter.read().unwrap().has_reference(address) {
+    pub fn has_reference(&self, frame: SharkyHeapFrameIndex) -> bool {
+        for (_, task) in self.tasks.read().iter() {
+            if task.vm.read().has_reference(frame) {
                 return true;
             }
         }
         false
     }
 
-    fn spawn_interpreter(synced: SharkySyncedApp, program: Arc<SharkyProgram>) {
-        let mut this = synced.write().unwrap();
-        this.interpreters.insert(SharkyInterpreterThread::new(synced.clone(), program));
+    pub fn complete(&self) -> bool {
+        self.tasks.read().iter().all(|(_, interpreter)| { interpreter.complete() })
     }
 
-    fn await_processes(app_arc: SharkySyncedApp) { 
-        loop {
-            { // scope for lock
-                let complete = {
-                    let app = app_arc.read().unwrap();
-                    app.interpreters.iter().all(|(_, interpreter)| {
-                        interpreter.complete()
-                    })
-                };
-
-                if complete { break; }
-            }
-            std::thread::yield_now();
-        }
-
-        let mut app = app_arc.write().unwrap();
-        for thread in app.interpreters.drain() {
+    pub fn join(&mut self) {
+        for thread in self.tasks.write().drain() {
             thread.thread.join().unwrap();
         }
     }
 
-    fn collect_dead_interpreters(&mut self) {
-        let interpreters = &mut self.interpreters;
+    pub fn collect_complete(&mut self) {
+        let interpreters = &mut self.tasks.write();
         let collection_list: Vec<usize> = interpreters
         .iter()
         .filter(|(_, interpreter)| { interpreter.complete() })
@@ -140,37 +88,75 @@ impl SharkyApp {
             interpreters.remove(i);
         }
     }
+}
 
-    pub fn init(program: Arc<SharkyProgram>) {
-        let app = Self::new_arc();
-        Self::start_garbage_collector(app.clone());
-        Self::spawn_interpreter(app.clone(), program.clone());
-        Self::await_processes(app);
+pub struct SharkyFFI {
+    natives: Arc<RwLock<HashMap<String, SharkyNativeLibrary>>>,
+}
+
+impl SharkyFFI {
+    fn load_native(&mut self, path: &Path) {
+        
+    }
+}
+
+#[derive(Default)]
+pub struct SharkyApp {
+    heap: SharkyHeap,
+    globals: Vec<SharkyHeapFrameIndex>,
+    task_pool: SharkyTaskPool,
+}
+
+
+impl SharkyApp {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn new(&mut self) -> SharkyHeapFrameIndex {
-        let mut heap = self.heap.write().unwrap();
-        heap.push(Some(RwLock::new(SharkyStack::default())));
-        self.allocation_count += 1;
-        heap.len() - 1
-    }
-    
-    pub fn get(&self, SharkyHeapAddress(v,  q): SharkyHeapAddress) -> Option<SharkyDataType> {
-        let heap = self.heap.read().ok()?;
-        let frame = 
-        heap
-        .get(v)?
-        .as_ref()?.read().ok()?;
-        frame.read(q).cloned()
+    fn spawn_task(&mut self, program: Arc<SharkyProgram>) {
+        self.task_pool.spawn_task(&self.heap, program);
     }
 
-    pub fn set(&mut self, SharkyHeapAddress(v,  q): SharkyHeapAddress, val: &SharkyDataType) -> Option<()> {
-        let heap = self.heap.read().ok()?;
-        let mut frame =  
-        heap
-        .get(v)?
-        .as_ref()?.write().ok()?;
-        frame.set(q, val.clone());
-        Some(())
+    fn garbage_collect(&mut self) {
+        self.task_pool.collect_complete();
+        if self.heap.get_allocation_count() < GC_COLLECTION_COUNT {
+            return;
+        }
+        self.heap.reset_allocation_count();
+
+        let mut to_collect: Vec<SharkyHeapFrameIndex> = vec![];
+
+        for frame in self.heap.collect_heap_indexes() {
+            if !self.heap.has_reference(frame) 
+            && !self.task_pool.has_reference(frame) 
+            && !self.globals.iter().any(move |v| {*v == frame}) {
+                to_collect.push(frame) 
+            }
+        }
+
+        for frame in to_collect {
+            self.heap.free(frame);
+        }
     }
+
+    fn await_processes(&mut self) { 
+        loop {
+            if self.task_pool.complete() { break; }
+            self.garbage_collect();
+        }
+        self.heap.print_debug();
+        self.task_pool.join();
+    }
+
+    pub fn init(program: Arc<SharkyProgram>, mut global_frames: Vec<SharkyDataStack>) {
+        let mut app = Self::new();
+
+        for frame in global_frames.drain(..) {
+            app.globals.push(app.heap.take_frame(frame));
+        }
+
+        app.spawn_task(program.clone());
+        app.await_processes();
+    }
+
 }
