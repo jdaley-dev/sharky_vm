@@ -2,7 +2,7 @@
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::sync::{Arc}; 
 
-use crate::{sharky_app::SharkyTaskPool, sharky_data_types::*, sharky_memory::*};
+use crate::{sharky_app::SharkyTaskPool, sharky_data_types::*, sharky_memory::*, sharky_native::{SharkyFFIFunctionHandle, SharkyFFILibrary}};
 
 #[macro_use] mod sharky_vm_macros;
 /*
@@ -17,32 +17,33 @@ pub struct SharkyVM {
     program_counter: usize,
     program_memory: Arc<SharkyProgram>,
     heap: SharkyHeap,
-    cstr_list: Vec<Vec<u8>>,
     task_pool: SharkyTaskPool,
+    ffi_function_table: Arc<Vec<SharkyFFIFunctionHandle>>,
     selected_frame: usize,
     running: bool,
 }
 
 pub type SharkySyncedVM = Arc<RwLock<SharkyVM>>;
 
+/// TODO: Sharky code standard: Stop passing references to constructors. Pass clones.
 impl SharkyVM {
 
-    pub fn new(program: Arc<SharkyProgram>, heap: &SharkyHeap, task_pool: &SharkyTaskPool) -> SharkyVM {
+    pub fn new(program: Arc<SharkyProgram>, heap: &SharkyHeap, task_pool: &SharkyTaskPool, ffi_functions: Arc<Vec<SharkyFFIFunctionHandle>>) -> SharkyVM {
         SharkyVM { 
             memory: RwLock::new(SharkyMemoryLayout::new()),
             program_counter: 0, 
             program_memory: Arc::clone(&program),
             heap: heap.clone(),
-            cstr_list: Vec::new(),
             task_pool: task_pool.clone(),
+            ffi_function_table: ffi_functions,
             selected_frame: 0,
             running: true,
         }
     }
 
     pub fn new_subvm(&self, program_counter: usize) -> SharkySyncedVM {
-        let mut subvm = Self::new(self.program_memory.clone(), &self.heap, &self.task_pool);
-        let parameter_stack = self.memory.write().get_parameter_stack().clone();
+        let mut subvm = Self::new(self.program_memory.clone(), &self.heap, &self.task_pool, self.ffi_function_table.clone());
+        let parameter_stack = self.memory.write().get_parameter_stack_mut().clone();
         subvm.program_counter = program_counter;
         subvm.memory.write().set_parameter_stack(&parameter_stack);
         Arc::new(RwLock::new(subvm))
@@ -52,8 +53,8 @@ impl SharkyVM {
         self.memory.read().has_heap_ref(address)
     }
 
-    pub fn new_arc(program: Arc<SharkyProgram>, heap: &SharkyHeap, task_pool: &SharkyTaskPool) -> SharkySyncedVM {
-        Arc::new(RwLock::new(SharkyVM::new(program, heap, task_pool)))
+    pub fn new_arc(program: Arc<SharkyProgram>, heap: &SharkyHeap, task_pool: &SharkyTaskPool, ffi_functions: Arc<Vec<SharkyFFIFunctionHandle>>) -> SharkySyncedVM {
+        Arc::new(RwLock::new(SharkyVM::new(program, heap, task_pool, ffi_functions)))
     }
  
     fn push_constant(&mut self, value: SharkyDataType) -> Option<()> {
@@ -86,12 +87,6 @@ impl SharkyVM {
     pub fn print_debug(&mut self) -> Option<()> {
         let memory = self.memory.read();
         memory.print_debug();
-
-        for val in self.cstr_list.drain(..) {
-            let s = String::from_utf8(val).unwrap();
-            println!("String: {s}");
-        }
-
         Some(())
     }
 
@@ -373,27 +368,8 @@ impl SharkyVM {
         match op {
             SharkyInstruction::FFICall(a) => {
                 let param_a = self.read_parameter(a.clone())?;
-            },
-
-            SharkyInstruction::FFIPushString(a) => {
-                let param_a = self.read_parameter(a.clone())?;
-                
-                let mut char_buffer: Vec<u8> = 
-                self
-                .heap
-                .get_frame_clone(param_a)?
-                .iter()
-                .filter_map(move |v| {
-                    match *v {
-                        SharkyDataType::Byte(v) => Some(v),
-                        _ => None,
-                    }
-                })
-                .collect();
-
-                char_buffer.push(0);
-                
-                self.cstr_list.push(char_buffer);
+                let function = self.ffi_function_table.get(param_a)?;
+                SharkyFFILibrary::call_function(function, self.memory.read().get_parameter_stack().get_vec());
             }
             _ => {}
         }

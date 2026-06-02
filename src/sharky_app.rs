@@ -1,8 +1,9 @@
+use core::ffi;
 use std::{collections::HashMap, path::Path, sync::Arc, thread::JoinHandle, time::Instant};
 use parking_lot::RwLock;
 use slab::{Iter, Slab};
 
-use crate::{sharky_data_types::*, sharky_memory::*, sharky_native::SharkyNativeLibrary, sharky_vm::*};
+use crate::{sharky_data_types::*, sharky_memory::*, sharky_native::{SharkyFFIFunctionHandle, SharkyFFIPool}, sharky_vm::*};
 
 const GC_COLLECTION_COUNT: usize = 128;
 
@@ -31,8 +32,8 @@ impl SharkyTask {
         }
     }
 
-    pub fn new(heap: &SharkyHeap, program: Arc<SharkyProgram>, task_pool: &SharkyTaskPool) -> Self {
-        let vm = SharkyVM::new_arc(program, heap, task_pool);
+    pub fn new(heap: &SharkyHeap, program: Arc<SharkyProgram>, task_pool: &SharkyTaskPool, ffi_functions: Arc<Vec<SharkyFFIFunctionHandle>>) -> Self {
+        let vm = SharkyVM::new_arc(program, heap, task_pool, ffi_functions);
         Self::new_subvm(vm)
     }
 
@@ -50,8 +51,8 @@ pub struct SharkyTaskPool {
 impl SharkyTaskPool {
     pub fn new() -> Self {Self::default()}
 
-    pub fn spawn_task(&mut self, heap: &SharkyHeap, program: Arc<SharkyProgram>) -> usize {
-        self.tasks.write().insert(SharkyTask::new(heap, program, self))
+    pub fn spawn_task(&mut self, heap: &SharkyHeap, program: Arc<SharkyProgram>, ffi_functions: Arc<Vec<SharkyFFIFunctionHandle>>) -> usize {
+        self.tasks.write().insert(SharkyTask::new(heap, program, self, ffi_functions))
     }
 
     pub fn spawn_subtask(&mut self, vm: SharkySyncedVM) -> usize {
@@ -90,19 +91,11 @@ impl SharkyTaskPool {
     }
 }
 
-pub struct SharkyFFI {
-    natives: Arc<RwLock<HashMap<String, SharkyNativeLibrary>>>,
-}
-
-impl SharkyFFI {
-    fn load_native(&mut self, path: &Path) {
-        
-    }
-}
 
 #[derive(Default)]
 pub struct SharkyApp {
     heap: SharkyHeap,
+    ffi_libraries: SharkyFFIPool,
     globals: Vec<SharkyHeapFrameIndex>,
     task_pool: SharkyTaskPool,
 }
@@ -114,7 +107,7 @@ impl SharkyApp {
     }
 
     fn spawn_task(&mut self, program: Arc<SharkyProgram>) {
-        self.task_pool.spawn_task(&self.heap, program);
+        self.task_pool.spawn_task(&self.heap, program, self.ffi_libraries.clone_function_arc_vec());
     }
 
     fn garbage_collect(&mut self) {
@@ -139,7 +132,7 @@ impl SharkyApp {
         }
     }
 
-    fn await_processes(&mut self) { 
+    fn audit_processes(&mut self) { 
         loop {
             if self.task_pool.complete() { break; }
             self.garbage_collect();
@@ -148,15 +141,16 @@ impl SharkyApp {
         self.task_pool.join();
     }
 
-    pub fn init(program: Arc<SharkyProgram>, mut global_frames: Vec<SharkyDataStack>) {
+
+    pub fn init(program: Arc<SharkyProgram>, mut global_frames: Vec<SharkyDataStack>, loaded_symbols: SharkyFFIPool) {
         let mut app = Self::new();
 
         for frame in global_frames.drain(..) {
             app.globals.push(app.heap.take_frame(frame));
         }
-
+        app.ffi_libraries = loaded_symbols;
         app.spawn_task(program.clone());
-        app.await_processes();
+        app.audit_processes();
     }
 
 }

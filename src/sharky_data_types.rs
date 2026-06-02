@@ -150,7 +150,6 @@ pub enum SharkyInstruction {
 
     // ffi ops
     FFICall(SharkyIndexParameter),
-    FFIPushString(SharkyParameter<SharkyHeapFrameIndex>),
 }
 
 pub type SharkyProgram = Vec<SharkyInstruction>;

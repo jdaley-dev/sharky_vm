@@ -20,19 +20,20 @@ use parking_lot::deadlock;
 
 fn main() {
 
-    if let Some(mut natives) = SharkyNativeLibrary::load_library("test_lib", Path::new("C:\\Users\\jdale\\Working\\_CC\\test_lib\\x64\\Release\\test_lib.dll")) {
-        if let Some(index) = natives.load_symbol("add") {
-            if let Some(result) = natives.call(index, vec![SharkyDataType::Int(1920), SharkyDataType::Int(1080)]) {
-                println!("Result: {result}");
-            }
-        }
-    }
+    let mut library_pool = SharkyFFIPool::new();
+    let library = library_pool.load_library("C:\\Users\\jdale\\Working\\_CC\\test_lib\\x64\\Release\\test_lib.dll").unwrap();
+    let function_id = library_pool.load_function(library, "print").unwrap();
 
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
-        SharkyInstruction::FFIPushString(SharkyParameter::Constant(0)),
-        SharkyInstruction::PushMax(SharkyParameter::Constant(44)), // 0
         SharkyInstruction::SetStackMode(SharkyStackMode::Parameter),
-        SharkyInstruction::PushReal(SharkyParameter::Constant(4.22)),
+        SharkyInstruction::PushMax(SharkyParameter::Constant(6)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('S' as u8)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('h' as u8)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('a' as u8)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('r' as u8)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('k' as u8)),
+        SharkyInstruction::PushByte(SharkyParameter::Constant('!' as u8)),
+        SharkyInstruction::FFICall(SharkyParameter::Constant(0)),
         SharkyInstruction::KillSelf,
     ]);
     
@@ -51,5 +52,5 @@ fn main() {
     test_frame.push(SharkyDataType::Byte('y' as u8));
     test_frame.push(SharkyDataType::Byte('!' as u8));
 
-    SharkyApp::init(program_arc, vec![test_frame]);
+    SharkyApp::init(program_arc, vec![test_frame], library_pool);
 }

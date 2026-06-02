@@ -1,57 +1,97 @@
 #![allow(dead_code)]
 use libloading::*;
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{path::{Path}, sync::Arc};
 
-use crate::sharky_data_types::SharkyDataType;
+use crate::sharky_data_types::{SharkyDataType, SharkySynced};
 
-type SharkyFunctionSignature = unsafe extern "C" fn(*const SharkyDataType, usize) -> SharkyDataType;
 
-pub struct SharkyNativeLibrary {
-    name: String,
-    location: PathBuf,
-    library: Library,
-    functions: Vec<SharkyFunctionSignature>,
-    symbol_map: HashMap<String, usize>    
+#[repr(C)]
+struct SharkyFFIStack {
+    count: usize,
+    ptr: *const SharkyDataType
 }
 
-impl SharkyNativeLibrary {
+type SharkyFFIFunctionSignature = unsafe extern "C" fn(SharkyFFIStack) -> SharkyFFIStack;
 
-    pub fn get_name(&self) -> &str {
-        &self.name
-    }
+#[derive(Clone, Copy)]
+pub struct SharkyFFIFunctionHandle {
+    ptr: *const ()
+}
 
-    pub fn load_library(library_name: &str, library_location: &Path) -> Option<SharkyNativeLibrary> {
+unsafe impl Send for SharkyFFIFunctionHandle {}
+unsafe impl Sync for SharkyFFIFunctionHandle {}
+pub struct SharkyFFILibrary {
+    library: Arc<Library>,
+}
+
+impl SharkyFFILibrary {
+
+    pub fn load_library(library_location: &Path) -> Option<Self> {
         // Safety Audit: Option<> prevents faulty libraries from being passed along.
+        // That's all we can really guarantee here. It's up to the libloading library
+        // for safety.
         unsafe {
             let lib = Library::new(library_location).ok()?;
-            Some(SharkyNativeLibrary { 
-                name: String::from(library_name), 
-                location: PathBuf::from(library_location), 
-                library: lib, 
-                functions: vec![], 
-                symbol_map: HashMap::new()
+            Some(Self { 
+                library: Arc::new(lib), 
             })
         }
     }
 
-    pub fn load_symbol(&mut self, symbol_name: &str) -> Option<usize> {
-        if let Some(&symbol) = self.symbol_map.get(symbol_name) { return Some(symbol); }
-        // Safety audit: This thoroughly checks if the symbol does actually exist. If it doesn't we get None.
+    pub fn query_function(&self, name: &str) -> Option<SharkyFFIFunctionHandle> {
+        // Safety audit: careful listening to error states. The fundamental danger here
+        // is we're casting data into a raw type-erased form. BUT, we do this because it's
+        // NECESSARY. In my opinion: this is tasteful and careful.
         unsafe {
-            let symbol = self.library.get::<SharkyFunctionSignature>(symbol_name.as_bytes()).ok()?;
-            let id = self.functions.len();
-            self.functions.push(*symbol);
-            self.symbol_map.insert(String::from(symbol_name), id); 
-            Some(id)
+            let symbol = self.library.get::<SharkyFFIFunctionSignature>(name.as_bytes()).ok()?;
+            let fn_ptr = *symbol;
+            let raw_ptr = std::mem::transmute::<SharkyFFIFunctionSignature, *const()>(fn_ptr);
+            Some(SharkyFFIFunctionHandle { ptr:  raw_ptr })
         }
     }
 
-    pub fn call(&mut self, index: usize, parameters: Vec<SharkyDataType>) -> Option<SharkyDataType> {
-        // Safety audit: There's no way I'm aware of to make calling a raw C function safe. 
-        // The arguments are always consistent and the function (should) always exist.
-        // Short of a bluescreen the worst we SHOULD get in return is a None. Only time will tell.
+    pub fn call_function(func: &SharkyFFIFunctionHandle, parameters: &Vec<SharkyDataType>) -> Option<Vec<SharkyDataType>> {
         unsafe {
-            Some(self.functions.get(index)?(parameters.as_ptr(), parameters.len()))
+            let func = std::mem::transmute::<*const(), SharkyFFIFunctionSignature>(func.ptr);
+            let ffi_stack = SharkyFFIStack {ptr: parameters.as_ptr(), count: parameters.len()};
+            let result = func(ffi_stack);
+            if result.count > 0 {
+                Some(Vec::from_raw_parts(result.ptr as *mut SharkyDataType, result.count, result.count))
+            } else {
+                None
+            } 
         }
+    }
+
+}
+
+#[derive(Default)]
+pub struct SharkyFFIPool {
+    libraries: Vec<SharkyFFILibrary>,
+    functions: Vec<SharkyFFIFunctionHandle>,
+}
+
+impl SharkyFFIPool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Thread Safety: Call only from the using thread.
+    pub fn load_library(&mut self, path: &str) -> Option<usize> {
+        let id = self.libraries.len();
+        self.libraries.push(SharkyFFILibrary::load_library(Path::new(path))?);
+        Some(id)
+    }
+
+    /// Thread Safety: Call only from the using thread.
+    pub fn load_function(&mut self, library: usize, symbol: &str) -> Option<usize> {
+        let id = self.functions.len();
+        self.functions.push(self.libraries.get(library)?.query_function(symbol)?);
+        Some(id)
+    }
+
+    /// Thread Safety: Call only from the using thread.
+    pub fn clone_function_arc_vec(&self) -> Arc<Vec<SharkyFFIFunctionHandle>> {
+        Arc::new(self.functions.clone())
     }
 }

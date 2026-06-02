@@ -20,6 +20,10 @@ impl<T: TypicalData> SharkyStack<T> {
         }
     }
     
+    pub fn get_vec(&self) -> &Vec<T> {
+        &self.stack
+    }
+
     pub fn search(&self, value: &T) -> bool {
         self.stack.iter().any(move |v| { *v == *value })
     }
@@ -118,8 +122,12 @@ impl SharkyMemoryLayout {
         &mut self.transitional_stack
     }
 
-    pub fn get_parameter_stack(&mut self) -> &mut SharkyDataStack {
+    pub fn get_parameter_stack_mut(&mut self) -> &mut SharkyDataStack {
         &mut self.parameter_stack
+    }    
+    
+    pub fn get_parameter_stack(&self) -> &SharkyDataStack {
+        &self.parameter_stack
     }
 
     pub fn get_operational_stack(&mut self) -> &mut SharkyDataStack {
