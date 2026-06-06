@@ -1,43 +1,82 @@
 use sharky_env::{data_types::*, ffi_collections::*};
 
+#[derive(Debug, Clone)]
+pub enum ArithmeticMode {
+    Add = 0,
+    Subtract = 1,
+    Multiply = 2,
+    Divide = 3,
+    Mod = 4,
+}
+
+#[derive(Debug, Clone)]
+pub enum BitwiseMode {
+    ShiftLeft = 0,
+    ShiftRight = 1,
+    And = 2,
+    Or = 3,
+    Xor = 4,
+    Not = 5,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComparisonMode {
+    And = 0,
+    Or = 1,
+    Equals = 2,
+    NotEquals = 3,
+    GreaterThan = 4,
+    LesserThan = 5,
+    GreaterThanOrEquals = 6,
+    LesserThanOrEquals = 7,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeMode {
+    Max = 0,
+    Int = 1,
+    Real = 2,
+    Byte = 3,
+    Bool = 4,
+    HeapReference = 5,
+    ByteString = 6,
+    Nil = 7,
+}
+
+#[derive(Debug, Clone)]
+pub enum LogicMode {
+    If = 0,
+    IfNot = 1,
+    PopIf = 2,
+}
+
+#[derive(Debug, Clone)]
+pub enum SelectStackMode {
+    Fixed = 0,
+    Indexed = 1,
+}
+
+#[derive(Debug, Clone)]
+pub enum FixedStackMode {
+    Operative = 0,
+    Transitional = 1,
+    Parameter = 2,
+}
+
+#[derive(Debug, Clone)]
+pub enum HeapOpMode {
+    New = 0,
+    Clone = 1,
+}
+
 #[allow(unused)]
 #[derive(Default, Debug, Clone)]
-pub enum SharkyParameter<T> {
+pub enum OpParameter {
     #[default]
     None,
-    Constant(T),
+    Constant(SharkyDataType),
     StackIndex(usize),
 }
-
-pub enum ArithmeticMode {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Mod,
-}
-
-pub enum BitwiseMode {
-    ShiftLeft,
-    ShiftRight,
-    And,
-    Or,
-    Xor,
-    Not,
-}
-
-pub enum ComparisonMode {
-    And,
-    Or,
-    Equals,
-    NotEquals,
-    GreaterThan,
-    LesserThan,
-    GreaterThanOrEquals,
-    LesserThanOrEquals,
-}
-
-type SharkyIndexParameter = SharkyParameter<usize>;
 
 #[allow(unused)]
 #[derive(Default, Debug, Clone)]
@@ -45,144 +84,48 @@ pub enum SharkyInstruction {
     #[default]
     NoOperation,
 
-    SetStackMode(SharkyStackMode),
-    SelectLocalStack(SharkyIndexParameter),
-    PushLocalStack,
-    PopLocalStack,
+    SelectStack(OpParameter, SelectStackMode),
+    PushStack,
+    PopStack,
 
-    // push a constant value to the top of the stack
-    PushMax(SharkyParameter<SharkyMax>),
-    PushInt(SharkyParameter<SharkyInt>),
-    PushReal(SharkyParameter<SharkyReal>),
-    PushByte(SharkyParameter<SharkyByte>),
-    PushBool(SharkyParameter<SharkyBool>),
-    PushHeapReference(SharkyParameter<SharkyHeapFrameIndex>),
-    PushByteString(SharkyParameter<CVec<SharkyByte>>),
-    PushNil,
+    Push(OpParameter, TypeMode),
 
-    ToMax(SharkyIndexParameter),
-    ToByte(SharkyIndexParameter),
-    ToInt(SharkyIndexParameter),
+    Convert(OpParameter, TypeMode),
 
     // stack operations
-    PushTransition(SharkyIndexParameter),
-    CopyTransition(SharkyIndexParameter),
-    Copy(SharkyIndexParameter),
-    Nilify(SharkyIndexParameter),
-    Set((SharkyIndexParameter, SharkyIndexParameter)),
+    CopyFromTransition(OpParameter),
+    CopyToTransition(OpParameter),
+
+    Copy(OpParameter),
+    Nilify(OpParameter),
+    Set((OpParameter, OpParameter)),
     Pop,
     Clear,
 
     // heap operations
-    CreateHeap,
-    CloneHeap,
-    SizeHeap,
-    PushHeap,
-    SelectHeap(SharkyIndexParameter),
-    WriteHeap((SharkyIndexParameter, SharkyIndexParameter)),
-    ReadHeap((SharkyIndexParameter, SharkyIndexParameter)),
+    Heap(HeapOpMode),
+    GetHeapSize,
+    NewHeapItem,
+    SelectHeap(OpParameter),
+    CopyToHeapItem(OpParameter, OpParameter),
+    CopyFromHeapItem(OpParameter, OpParameter),
 
     // bytestring operations
-    //
-    /// # Parameters
-    /// ## `dest`
-    /// ByteString index to copy the data to.
-    /// ## `start`
-    /// Beginning of heap index to start the copy at.
-    /// ## `end`
-    /// End of heap index to stop the copy at.
-    ///
-    /// # Description
-    /// Takes a line of stack data `start`-`end`, converts it to bytes, and pushes it into a bytestring `dest`
-    ///
-    /// # Note
-    /// This removes all discriminant data from the underlying rust enum type. This only saves the relevant data to a type.
-    PushBytes(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Start
-            SharkyIndexParameter, // End
-        ),
-    ),
-    //
-    SetByte(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
-    ReadBytesAsMax(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
-    ReadBytesAsInt(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
-    ReadBytesAsReal(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
-    ReadBytesAsByte(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
-    ReadBytesAsBool(
-        (
-            SharkyIndexParameter, // Dest
-            SharkyIndexParameter, // Index
-            SharkyIndexParameter, // Src
-        ),
-    ),
+    PushBytes(OpParameter, OpParameter, OpParameter),
+    SetByte((OpParameter, OpParameter, OpParameter)),
+    ReadByteAs((OpParameter, OpParameter, TypeMode)),
 
-    // All operations are a OP b
-    Add((SharkyIndexParameter, SharkyIndexParameter)),
-    Subtract((SharkyIndexParameter, SharkyIndexParameter)),
-    Multiply((SharkyIndexParameter, SharkyIndexParameter)),
-    Divide((SharkyIndexParameter, SharkyIndexParameter)),
-    Modulus((SharkyIndexParameter, SharkyIndexParameter)),
-    BitLeftShift((SharkyIndexParameter, SharkyIndexParameter)),
-    BitRightShift((SharkyIndexParameter, SharkyIndexParameter)),
-    BitAnd((SharkyIndexParameter, SharkyIndexParameter)),
-    BitXor((SharkyIndexParameter, SharkyIndexParameter)),
-    BitOr((SharkyIndexParameter, SharkyIndexParameter)),
-    BitNot(SharkyIndexParameter),
-    Not(SharkyIndexParameter),
-    And((SharkyIndexParameter, SharkyIndexParameter)),
-    Or((SharkyIndexParameter, SharkyIndexParameter)),
-    Equals((SharkyIndexParameter, SharkyIndexParameter)),
-    NotEquals((SharkyIndexParameter, SharkyIndexParameter)),
-    GreaterThan((SharkyIndexParameter, SharkyIndexParameter)),
-    LesserThan((SharkyIndexParameter, SharkyIndexParameter)),
-    GreaterThanOrEquals((SharkyIndexParameter, SharkyIndexParameter)),
-    LesserThanOrEquals((SharkyIndexParameter, SharkyIndexParameter)),
+    BinaryOp(OpParameter, OpParameter, ArithmeticMode),
 
-    // Logic operations
-    Jump(SharkyIndexParameter),
-    // conditional jumps are (to, condition)
-    JumpIfNot((SharkyIndexParameter, SharkyIndexParameter)),
-    // popjumpifnot checks if the top of the stack is false then if false it pops it, and jumps to the location
-    PopJumpIfNot(SharkyIndexParameter),
+    Goto(OpParameter),
+    LogicalGoto((OpParameter, OpParameter, LogicMode)),
 
     // Thread operations
-    SpawnSubtask(SharkyIndexParameter),
+    SpawnSubtask(OpParameter),
     EndTask,
 
     // ffi ops
-    FFICall(SharkyIndexParameter),
+    FFICall(OpParameter),
 }
 
 pub type SharkyProgram = Vec<SharkyInstruction>;
