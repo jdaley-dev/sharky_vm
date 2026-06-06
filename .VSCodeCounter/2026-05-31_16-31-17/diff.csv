@@ -1,8 +1,0 @@
-"filename", "language", "Rust", "comment", "blank", "total"
-"c:\Users\jdale\Working\sharky-vm\src\main.rs", "Rust", 25, 0, 2, 27
-"c:\Users\jdale\Working\sharky-vm\src\sharky_app.rs", "Rust", -57, -10, -5, -72
-"c:\Users\jdale\Working\sharky-vm\src\sharky_data_types.rs", "Rust", 78, 7, 11, 96
-"c:\Users\jdale\Working\sharky-vm\src\sharky_instruction_set.rs", "Rust", -83, -8, -11, -102
-"c:\Users\jdale\Working\sharky-vm\src\sharky_memory.rs", "Rust", 141, 0, 27, 168
-"c:\Users\jdale\Working\sharky-vm\src\sharky_vm.rs", "Rust", -83, -1, -12, -96
-"Total", "-", 21, -12, 12, 21
