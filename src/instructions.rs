@@ -1,5 +1,6 @@
 use sharky_env::{data_types::*, ffi_collections::*};
 
+#[allow(unused)]
 #[derive(Default, Debug, Clone)]
 pub enum SharkyParameter<T> {
     #[default]
@@ -8,8 +9,37 @@ pub enum SharkyParameter<T> {
     StackIndex(usize),
 }
 
+pub enum ArithmeticMode {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Mod,
+}
+
+pub enum BitwiseMode {
+    ShiftLeft,
+    ShiftRight,
+    And,
+    Or,
+    Xor,
+    Not,
+}
+
+pub enum ComparisonMode {
+    And,
+    Or,
+    Equals,
+    NotEquals,
+    GreaterThan,
+    LesserThan,
+    GreaterThanOrEquals,
+    LesserThanOrEquals,
+}
+
 type SharkyIndexParameter = SharkyParameter<usize>;
 
+#[allow(unused)]
 #[derive(Default, Debug, Clone)]
 pub enum SharkyInstruction {
     #[default]
@@ -51,6 +81,72 @@ pub enum SharkyInstruction {
     SelectHeap(SharkyIndexParameter),
     WriteHeap((SharkyIndexParameter, SharkyIndexParameter)),
     ReadHeap((SharkyIndexParameter, SharkyIndexParameter)),
+
+    // bytestring operations
+    //
+    /// # Parameters
+    /// ## `dest`
+    /// ByteString index to copy the data to.
+    /// ## `start`
+    /// Beginning of heap index to start the copy at.
+    /// ## `end`
+    /// End of heap index to stop the copy at.
+    ///
+    /// # Description
+    /// Takes a line of stack data `start`-`end`, converts it to bytes, and pushes it into a bytestring `dest`
+    ///
+    /// # Note
+    /// This removes all discriminant data from the underlying rust enum type. This only saves the relevant data to a type.
+    PushBytes(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Start
+            SharkyIndexParameter, // End
+        ),
+    ),
+    //
+    SetByte(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
+    ReadBytesAsMax(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
+    ReadBytesAsInt(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
+    ReadBytesAsReal(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
+    ReadBytesAsByte(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
+    ReadBytesAsBool(
+        (
+            SharkyIndexParameter, // Dest
+            SharkyIndexParameter, // Index
+            SharkyIndexParameter, // Src
+        ),
+    ),
 
     // All operations are a OP b
     Add((SharkyIndexParameter, SharkyIndexParameter)),
