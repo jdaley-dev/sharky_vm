@@ -1,56 +1,44 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
-use crate::sharky_app::SharkyApp;
-use crate::sharky_memory::SharkyDataStack;
-use crate::sharky_string::SharkyStringPool;
-use crate::sharky_native::*;
-use crate::sharky_data_types::*;
+use sharky_env::ffi::*;
+use sharky_env::ffi_collections::*;
+use sharky_env::data_types::*;
 
-mod sharky_native;
-mod sharky_string;
-mod sharky_data_types;
-mod sharky_memory;
-mod sharky_vm;
-mod sharky_app;
+use crate::app::*;
+use crate::instructions::*;
 
-use parking_lot::deadlock;
+mod vm;
+mod app;
+mod instructions;
 
 fn main() {
-
     let mut library_pool = SharkyFFIPool::new();
     let library = library_pool.load_library("C:\\Users\\jdale\\Working\\_CC\\test_lib\\x64\\Release\\test_lib.dll").unwrap();
-    let function_id = library_pool.load_function(library, "print").unwrap();
+    library_pool.load_function(library, "print").unwrap(); // id 0. sequential.
+
+    let mut sharky_string = CVec::<SharkyByte>::new();
+    let rust_string = String::from("Sharky! FROM A BYTESTRING\nThis is a true FFI interaction between sharky and a C library.");
+    sharky_string.operate(|vec| {
+        vec.resize(rust_string.len(), '\0' as u8);
+        vec.clone_from_slice(rust_string.as_bytes());
+    });
 
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
+        
         SharkyInstruction::SetStackMode(SharkyStackMode::Parameter),
-        SharkyInstruction::PushMax(SharkyParameter::Constant(6)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('S' as u8)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('h' as u8)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('a' as u8)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('r' as u8)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('k' as u8)),
-        SharkyInstruction::PushByte(SharkyParameter::Constant('!' as u8)),
+        // string input parameter
+        SharkyInstruction::PushByteString(SharkyParameter::Constant(sharky_string)),
         SharkyInstruction::FFICall(SharkyParameter::Constant(0)),
-        SharkyInstruction::KillSelf,
-    ]);
-    
-    let mut test_frame = SharkyDataStack::default();
-    test_frame.push(SharkyDataType::Byte('H' as u8));
-    test_frame.push(SharkyDataType::Byte('e' as u8));
-    test_frame.push(SharkyDataType::Byte('l' as u8));
-    test_frame.push(SharkyDataType::Byte('l' as u8));
-    test_frame.push(SharkyDataType::Byte('o' as u8));
-    test_frame.push(SharkyDataType::Byte(' ' as u8));
-    test_frame.push(SharkyDataType::Byte('S' as u8));
-    test_frame.push(SharkyDataType::Byte('h' as u8));
-    test_frame.push(SharkyDataType::Byte('a' as u8));
-    test_frame.push(SharkyDataType::Byte('r' as u8));
-    test_frame.push(SharkyDataType::Byte('k' as u8));
-    test_frame.push(SharkyDataType::Byte('y' as u8));
-    test_frame.push(SharkyDataType::Byte('!' as u8));
 
-    SharkyApp::init(program_arc, vec![test_frame], library_pool);
+        SharkyInstruction::EndTask,
+    ]);
+
+    let mut cvec: CVec<usize> = CVec::new();    
+    let mut operator = cvec.get_operator_mut();
+    operator.push(44);
+    println!("Value: {}", operator.get(0).unwrap());
+    drop(operator);
+
+    SharkyApp::init(program_arc, vec![], library_pool);
 }

@@ -1,9 +1,9 @@
-use core::ffi;
-use std::{collections::HashMap, path::Path, sync::Arc, thread::JoinHandle, time::Instant};
-use parking_lot::RwLock;
-use slab::{Iter, Slab};
+use std::{sync::Arc, thread::JoinHandle};
+use slab::{Slab};
 
-use crate::{sharky_data_types::*, sharky_memory::*, sharky_native::{SharkyFFIFunctionHandle, SharkyFFIPool}, sharky_vm::*};
+use crate::{vm::*, instructions::*};
+
+use sharky_env::{data_types::*, collections::*, ffi::{*}};
 
 const GC_COLLECTION_COUNT: usize = 128;
 

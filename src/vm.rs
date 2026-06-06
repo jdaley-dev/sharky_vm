@@ -2,16 +2,11 @@
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::sync::{Arc}; 
 
-use crate::{sharky_app::SharkyTaskPool, sharky_data_types::*, sharky_memory::*, sharky_native::{SharkyFFIFunctionHandle, SharkyFFILibrary}};
+use sharky_env::{collections::*, ffi::*, ffi_collections::*, data_types::*};
 
-#[macro_use] mod sharky_vm_macros;
-/*
- * TODO:
- * Switch local stack array to non_empty to prevent the representation of an error state.
- */
+use crate::{app::SharkyTaskPool, instructions::*};
 
-
-
+#[macro_use] mod vm_macros;
 pub struct SharkyVM {
     memory: RwLock<SharkyMemoryLayout>,
     program_counter: usize,
@@ -204,6 +199,7 @@ impl SharkyVM {
             SharkyInstruction::PushByte(v) => {push_constant!(self, v.clone(), Byte);}
             SharkyInstruction::PushBool(v) => {push_constant!(self, v.clone(), Bool);}
             SharkyInstruction::PushHeapReference(v) =>{push_constant!(self, v.clone(), HeapReference);}
+            SharkyInstruction::PushByteString(v) => {push_constant!(self, v.clone(), ByteString)}
             _ => {}
         }
         Some(())
@@ -355,7 +351,7 @@ impl SharkyVM {
                 let subtask = self.new_subvm(param_a);
                 self.task_pool.spawn_subtask(subtask);
             }
-            SharkyInstruction::KillSelf => {
+            SharkyInstruction::EndTask => {
                 self.running = false;
             }
             _ => {}
