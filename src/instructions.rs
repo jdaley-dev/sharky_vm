@@ -1,6 +1,9 @@
-use sharky_env::{data_types::*, ffi_collections::*};
+use derive_more::derive::TryInto;
+use num_enum::TryFromPrimitive;
+use sharky_env::data_types::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum ArithmeticMode {
     Add = 0,
     Subtract = 1,
@@ -9,7 +12,8 @@ pub enum ArithmeticMode {
     Mod = 4,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum BitwiseMode {
     ShiftLeft = 0,
     ShiftRight = 1,
@@ -19,7 +23,8 @@ pub enum BitwiseMode {
     Not = 5,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum ComparisonMode {
     And = 0,
     Or = 1,
@@ -31,8 +36,9 @@ pub enum ComparisonMode {
     LesserThanOrEquals = 7,
 }
 
-#[derive(Debug, Clone)]
-pub enum TypeMode {
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
+pub enum ConversionMode {
     Max = 0,
     Int = 1,
     Real = 2,
@@ -43,30 +49,36 @@ pub enum TypeMode {
     Nil = 7,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum LogicMode {
     If = 0,
     IfNot = 1,
     PopIf = 2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum SelectStackMode {
     Fixed = 0,
     Indexed = 1,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum FixedStackMode {
     Operative = 0,
     Transitional = 1,
     Parameter = 2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TryFromPrimitive)]
+#[repr(u8)]
 pub enum HeapOpMode {
-    New = 0,
+    Create = 0,
     Clone = 1,
+    NewItem = 2,
+    Size,
 }
 
 #[allow(unused)]
@@ -75,7 +87,7 @@ pub enum OpParameter {
     #[default]
     None,
     Constant(SharkyDataType),
-    StackIndex(usize),
+    Pointer(usize),
 }
 
 #[allow(unused)]
@@ -84,43 +96,49 @@ pub enum SharkyInstruction {
     #[default]
     NoOperation,
 
+    // stack_index, mode
     SelectStack(OpParameter, SelectStackMode),
+    // add stack frame
     PushStack,
+    // remove stack frame
     PopStack,
 
-    Push(OpParameter, TypeMode),
-
-    Convert(OpParameter, TypeMode),
-
-    // stack operations
-    CopyFromTransition(OpParameter),
+    // copy value from [selected_stack] and push to the transition stack
     CopyToTransition(OpParameter),
-
+    // copy value from the transition stack and push to [selected_stack]
+    CopyFromTransition(OpParameter),
+    // push value (constant or index into [selected_stack]) to [selected_stack]
+    Push(SharkyDataType),
+    // convert value in [selected_stack] to different type
+    Convert(OpParameter, ConversionMode),
+    // copy value from [selected_stack] and push to [selected_stack]
     Copy(OpParameter),
+    // set value in [selected_stack] to nil
     Nilify(OpParameter),
-    Set((OpParameter, OpParameter)),
+    // set value[0] in [selected_stack] to value[1] in [selected_stack]
+    Set(OpParameter, OpParameter),
+    // pop value from [selected_stack]
     Pop,
+    // clear [selected_stack]
     Clear,
 
-    // heap operations
+    // perform a heap op
     Heap(HeapOpMode),
-    GetHeapSize,
-    NewHeapItem,
     SelectHeap(OpParameter),
     CopyToHeapItem(OpParameter, OpParameter),
     CopyFromHeapItem(OpParameter, OpParameter),
 
-    // bytestring operations
     PushBytes(OpParameter, OpParameter, OpParameter),
     SetByte((OpParameter, OpParameter, OpParameter)),
-    ReadByteAs((OpParameter, OpParameter, TypeMode)),
+    ReadByteAs((OpParameter, OpParameter, ConversionMode)),
 
-    BinaryOp(OpParameter, OpParameter, ArithmeticMode),
+    ArithmeticOp(OpParameter, OpParameter, ArithmeticMode),
+    BitwiseOp(OpParameter, OpParameter, BitwiseMode),
+    ComparisonOp(OpParameter, OpParameter, ComparisonMode),
 
     Goto(OpParameter),
-    LogicalGoto((OpParameter, OpParameter, LogicMode)),
+    LogicalGoto(OpParameter, OpParameter, LogicMode),
 
-    // Thread operations
     SpawnSubtask(OpParameter),
     EndTask,
 

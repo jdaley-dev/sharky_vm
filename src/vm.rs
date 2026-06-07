@@ -4,7 +4,11 @@ use std::{fmt::Display, sync::Arc};
 
 use sharky_env::{collections::*, data_types::*, ffi::*};
 
-use crate::{app::SharkyTaskPool, instructions::*};
+use crate::{
+    app::SharkyTaskPool,
+    instructions::{SharkyInstruction::NoOperation, *},
+    vm::SharkyInterrupt::TypeMismatch,
+};
 
 #[macro_use]
 mod vm_macros;
@@ -12,7 +16,7 @@ mod vm_macros;
 pub enum SharkyInterrupt {
     OutOfOps = 0,
     InvalidParameter = 1,
-    InvalidStackIndex = 2,
+    InvalidSelectedStack = 2,
     InvalidStackMode = 3,
     InvalidStackObjectIndex = 4,
     InvalidHeapIndex = 5,
@@ -20,6 +24,7 @@ pub enum SharkyInterrupt {
     InvalidConversion = 7,
     InvalidFFICall = 8,
     DivideByZero = 9,
+    NonIndexValue = 10,
 }
 
 impl Display for SharkyInterrupt {
@@ -27,7 +32,7 @@ impl Display for SharkyInterrupt {
         match self {
             SharkyInterrupt::OutOfOps => write!(f, "OutOfOps"),
             SharkyInterrupt::InvalidParameter => write!(f, "InvalidParameter"),
-            SharkyInterrupt::InvalidStackIndex => write!(f, "InvalidStackIndex"),
+            SharkyInterrupt::InvalidSelectedStack => write!(f, "InvalidStackIndex"),
             SharkyInterrupt::InvalidStackMode => write!(f, "InvalidStackMode"),
             SharkyInterrupt::InvalidStackObjectIndex => write!(f, "InvalidStackObjectIndex"),
             SharkyInterrupt::InvalidHeapIndex => write!(f, "InvalidHeapIndex"),
@@ -35,6 +40,7 @@ impl Display for SharkyInterrupt {
             SharkyInterrupt::InvalidConversion => write!(f, "InvalidConversion"),
             SharkyInterrupt::InvalidFFICall => write!(f, "InvalidFFICall"),
             SharkyInterrupt::DivideByZero => write!(f, "DivideByZero"),
+            SharkyInterrupt::NonIndexValue => write!(f, "NonIndexValue"),
         }
     }
 }
@@ -54,7 +60,6 @@ pub struct SharkyVM {
 
 pub type SharkySyncedVM = Arc<RwLock<SharkyVM>>;
 
-/// TODO: Sharky code standard: Stop passing references to constructors. Pass clones.
 impl SharkyVM {
     pub fn new(
         program: Arc<SharkyProgram>,
@@ -122,21 +127,6 @@ impl SharkyVM {
         self.running = false;
     }
 
-    fn read_parameter<T: SharkyValue>(&mut self, parameter: SharkyParameter<T>) -> Option<T>
-    where
-        SharkyDataType: TryInto<T> + Clone,
-    {
-        match parameter {
-            SharkyParameter::Constant(val) => Some(val.into()),
-            SharkyParameter::StackIndex(index) => Some(
-                (self.memory.read().get_active_stack()?.read(index)?.clone())
-                    .try_into()
-                    .ok()?,
-            ),
-            SharkyParameter::None => None,
-        }
-    }
-
     pub fn print_debug(&mut self) -> Option<()> {
         let memory = self.memory.read();
         memory.print_debug();
@@ -166,438 +156,155 @@ impl SharkyVM {
         let prev_counter = self.program_counter;
 
         match current_instruction {
-            // -----------------------------------------------------------------------
-            // -----------------------------Begin Stack Ops---------------------------
-            // -----------------------------------------------------------------------
-            SharkyInstruction::SetStackMode(mode) => self.memory.write().set_stack_mode(mode),
+            NoOperation => (),
 
-            SharkyInstruction::SelectLocalStack(stack) => {
-                let parameter = self
-                    .read_parameter(stack)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                self.memory.write().select_local_stack(parameter)
+            SharkyInstruction::SelectStack(stack_index, mode) => {
+                let stack_index: SharkyMax = self.read_parameter_val(stack_index)?;
+                match mode {
+                    SelectStackMode::Fixed => {
+                        // Stack modes are stored in the FixedStackMode enum, bytecode representations need to be able to just post a value.
+                        // this simplifies the bytecode interpreter as we can just parse simple bytes into the stack mode and take in the same
+                        // kind of parameter. "stack_index" has the ability to just be a number and is interpreted based on the mode.
+                        let u8_mode = stack_index as u8;
+                        let fixed_stack: FixedStackMode = u8_mode
+                            .try_into()
+                            .map_err(|_| SharkyInterrupt::InvalidStackMode)?;
+                        match fixed_stack {
+                            FixedStackMode::Operative => self
+                                .memory
+                                .write()
+                                .set_stack_mode(SharkyStackMode::Operative),
+                            FixedStackMode::Transitional => self
+                                .memory
+                                .write()
+                                .set_stack_mode(SharkyStackMode::Transitional),
+                            FixedStackMode::Parameter => self
+                                .memory
+                                .write()
+                                .set_stack_mode(SharkyStackMode::Parameter),
+                        }
+                    }
+                    SelectStackMode::Indexed => {
+                        let mut memory = self.memory.write();
+                        memory.set_stack_mode(SharkyStackMode::Indexed);
+                        // Design decision: The VM will let you SELECT an invalid stack, but throws an error if you try to use it.
+                        // This is because technically a stack could become invalid even after selecting it, so it has to check
+                        // any way. This may or may not be beneficial.
+                        memory.select_local_stack(stack_index);
+                    }
+                }
             }
-            SharkyInstruction::PushLocalStack => self.memory.write().new_local_stack(),
+            SharkyInstruction::PushStack => self.memory.write().new_local_stack(),
 
-            SharkyInstruction::PopLocalStack => self.memory.write().pop_local_stack(),
+            SharkyInstruction::PopStack => self.memory.write().pop_local_stack(),
 
-            SharkyInstruction::PushTransition(a) => {
-                let param = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let mut memory = self.memory.write();
-                let stack = memory
-                    .get_active_stack()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?;
-                let value = stack
-                    .read(param)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?
-                    .clone();
-                memory.get_transitional_stack().push(value);
+            SharkyInstruction::CopyToTransition(src_) => {
+                let src: SharkyMax = self.read_parameter_val(src_)?;
+                let val = self.read_active_stack(src)?;
+                self.memory.write().get_transitional_stack().push(val);
             }
 
-            SharkyInstruction::CopyTransition(a) => {
-                let param = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let mut memory = self.memory.write();
-                let value = memory
+            SharkyInstruction::CopyFromTransition(src_) => {
+                let src: SharkyMax = self.read_parameter_val(src_)?;
+                let value = self
+                    .memory
+                    .write()
                     .get_transitional_stack()
-                    .read(param)
+                    .read(src)
                     .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?
                     .clone();
-                memory
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .push(value);
+                self.push_active_stack(value)?;
             }
 
-            SharkyInstruction::Copy(a) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let mut memory = self.memory.write();
-                let stack = memory
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?;
-                let data = stack
-                    .read(param_a)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?
-                    .clone();
-                stack.push(data);
+            SharkyInstruction::Push(value) => {
+                self.push_active_stack(value)?;
+            }
+            SharkyInstruction::Convert(src_, mode) => {
+                let src = self.read_parameter(src_)?;
+                let converted = Self::convert_to(src, mode)?;
+                self.push_active_stack(converted)?;
             }
 
-            SharkyInstruction::Nilify(a) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let mut memory = self.memory.write();
-                let stack = memory
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?;
-                stack
-                    .set(param_a, SharkyDataType::Nil)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?;
+            SharkyInstruction::Nilify(dest_) => {
+                let dest: SharkyMax = self.read_parameter_val(dest_)?;
+                self.write_active_stack(dest, SharkyDataType::Nil)?;
             }
 
-            SharkyInstruction::Set((a, b)) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAMETER
-                let param_b = self
-                    .read_parameter(b)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAMETER
-                let mut memory = self.memory.write();
-                let stack = memory
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID STACK INDEX
-                stack.set(
-                    param_a,
-                    stack
-                        .read(param_b)
-                        .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                        .clone(),
-                ); // INVALID STACK INDEX
+            SharkyInstruction::Set(dest_, src_) => {
+                let dest: SharkyMax = self.read_parameter_val(dest_)?;
+                let src: SharkyMax = self.read_parameter_val(src_)?;
+                let src_val = self.read_active_stack(src)?;
+                self.write_active_stack(dest, src_val)?;
+            }
+
+            SharkyInstruction::Copy(src_) => {
+                let src_index: SharkyMax = self.read_parameter_val(src_)?;
+                let src_val = self.read_active_stack(src_index)?;
+                self.push_active_stack(src_val)?;
             }
 
             SharkyInstruction::Pop => {
                 self.memory
                     .write()
                     .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .pop(); // INVALID STACK INDEX
+                    .ok_or(SharkyInterrupt::InvalidSelectedStack)?
+                    .pop();
             }
 
             SharkyInstruction::Clear => {
                 self.memory
                     .write()
                     .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .clear(); // INVALID STACK INDEX
-            }
-            // -----------------------------------------------------------------------
-            // ----------------------------End Stack Ops------------------------------
-            // -----------------------------------------------------------------------
-
-            // -----------------------------------------------------------------------
-            // ----------------------------Begin Push Ops-----------------------------
-            // -----------------------------------------------------------------------
-            SharkyInstruction::PushNil => self
-                .push_constant(SharkyDataType::Nil)
-                .ok_or(SharkyInterrupt::InvalidStackIndex)?, // INVALID STACK INDEX
-
-            SharkyInstruction::PushReal(v) => {
-                push_constant!(self, v.clone(), Real);
-            }
-            SharkyInstruction::PushMax(v) => {
-                push_constant!(self, v.clone(), Max);
-            }
-            SharkyInstruction::PushInt(v) => {
-                push_constant!(self, v.clone(), Int);
-            }
-            SharkyInstruction::PushByte(v) => {
-                push_constant!(self, v.clone(), Byte);
-            }
-            SharkyInstruction::PushBool(v) => {
-                push_constant!(self, v.clone(), Bool);
-            }
-            SharkyInstruction::PushHeapReference(v) => {
-                push_constant!(self, v.clone(), HeapReference);
-            }
-            SharkyInstruction::PushByteString(v) => {
-                push_constant!(self, v.clone(), ByteString)
-            }
-            // -----------------------------------------------------------------------
-            // ----------------------------End Push Ops-------------------------------
-            // -----------------------------------------------------------------------
-
-            // -----------------------------------------------------------------------
-            // ----------------------------Begin Conversion Ops-----------------------
-            // -----------------------------------------------------------------------
-            SharkyInstruction::ToInt(a) => {
-                convert_match_impl!(self, a, stack,
-                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Int(*v as SharkyInt)),
-                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Int(*v as SharkyInt)),
-                ); // INVALID CONVERSION
+                    .ok_or(SharkyInterrupt::InvalidSelectedStack)?
+                    .clear();
             }
 
-            SharkyInstruction::ToMax(a) => {
-                convert_match_impl!(self, a, stack,
-                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Max(*v as SharkyMax)),
-                    SharkyDataType::Byte(v) => stack.push(SharkyDataType::Max(*v as SharkyMax)),
-                ); // INVALID CONVERSION
+            SharkyInstruction::ArithmeticOp(lhs_, rhs_, mode) => {
+                let lhs = self.read_parameter(lhs_)?;
+                let rhs = self.read_parameter(rhs_)?;
+                SharkyDataType::operate_if_are_type::<SharkyMax, _>(lhs, rhs, |a, b| {
+                    SharkyDataType::Nil
+                });
+            }
+            SharkyInstruction::BitwiseOp(lhs, rhs, mode) => todo!(),
+            SharkyInstruction::ComparisonOp(lhs, rhs, mode) => todo!(),
+
+            SharkyInstruction::PushBytes(dest, start, end) => todo!(),
+            SharkyInstruction::SetByte(_) => todo!(),
+            SharkyInstruction::ReadByteAs(_) => todo!(),
+
+            SharkyInstruction::Goto(a) => {
+                self.program_counter = self.read_parameter_val(a)?;
             }
 
-            SharkyInstruction::ToByte(a) => {
-                convert_match_impl!(self, a, stack,
-                    SharkyDataType::Max(v) => stack.push(SharkyDataType::Byte(*v as SharkyByte)),
-                    SharkyDataType::Int(v) => stack.push(SharkyDataType::Byte(*v as SharkyByte)),
-                ); // INVALID CONVERSION
-            }
-            // -----------------------------------------------------------------------
-            // ----------------------------End Conversion Ops-------------------------
-            // -----------------------------------------------------------------------
+            SharkyInstruction::LogicalGoto(a, b, condition) => todo!(),
 
-            // -----------------------------------------------------------------------
-            // -------------------------Begin Operative Ops---------------------------
-            // -----------------------------------------------------------------------
-            // TODO: INCOMPATIBLE COMPARISON
-            SharkyInstruction::Add((a, b)) => {
-                operational_binary_impl!(self, a, b, +, real);
-            }
-            SharkyInstruction::Subtract((a, b)) => {
-                operational_binary_impl!(self, a, b, -, real);
-            }
-            SharkyInstruction::Multiply((a, b)) => {
-                operational_binary_impl!(self, a, b, *, real);
-            }
-            SharkyInstruction::Divide((a, b)) => {
-                if self
-                    .read_parameter(b.clone())
-                    .ok_or(SharkyInterrupt::InvalidParameter)?
-                    == 0
-                {
-                    return Err(SharkyInterrupt::DivideByZero);
-                }
-                operational_binary_impl!(self, a, b, /, real);
-            }
-            SharkyInstruction::Modulus((a, b)) => {
-                if self
-                    .read_parameter(b.clone())
-                    .ok_or(SharkyInterrupt::InvalidParameter)?
-                    == 0
-                {
-                    return Err(SharkyInterrupt::DivideByZero);
-                }
-                operational_binary_impl!(self, a, b, %, real);
-            }
+            SharkyInstruction::Heap(mode) => todo!(),
+            SharkyInstruction::SelectHeap(index) => todo!(),
+            SharkyInstruction::CopyToHeapItem(dest, src) => todo!(),
+            SharkyInstruction::CopyFromHeapItem(dest, src) => todo!(),
 
-            SharkyInstruction::BitLeftShift((a, b)) => {
-                operational_binary_impl!(self, a, b, <<);
-            }
-            SharkyInstruction::BitRightShift((a, b)) => {
-                operational_binary_impl!(self, a, b, >>);
-            }
-            SharkyInstruction::BitAnd((a, b)) => {
-                operational_binary_impl!(self, a, b, &);
-            }
-            SharkyInstruction::BitXor((a, b)) => {
-                operational_binary_impl!(self, a, b, ^);
-            }
-            SharkyInstruction::BitOr((a, b)) => {
-                operational_binary_impl!(self, a, b, |);
-            }
-            SharkyInstruction::BitNot(a) => {
-                operational_unary_impl!(self, a, !);
-            }
-
-            SharkyInstruction::Not(a) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let mut memory = self.memory.write();
-                let opstack = memory.get_operational_stack();
-                let val = opstack
-                    .read(param_a)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?;
-                let result = match val {
-                    SharkyDataType::Bool(a) => !a,
-                    _ => false, // TODO: type mismatch interrupt
-                };
-                opstack.push(SharkyDataType::Bool(result));
-            }
-
-            SharkyInstruction::And((a, b)) => {
-                operational_binary_boolean_impl!(self, a, b, &&);
-            }
-            SharkyInstruction::Or((a, b)) => {
-                operational_binary_boolean_impl!(self, a, b, ||);
-            }
-            SharkyInstruction::Equals((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, ==);
-            }
-            SharkyInstruction::NotEquals((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, !=);
-            }
-            SharkyInstruction::GreaterThan((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, >);
-            }
-            SharkyInstruction::LesserThan((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, <);
-            }
-            SharkyInstruction::GreaterThanOrEquals((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, >=);
-            }
-            SharkyInstruction::LesserThanOrEquals((a, b)) => {
-                operational_binary_comparison_impl!(self, a, b, <=);
-            }
-            // -----------------------------------------------------------------------
-            // ---------------------------End Operative Ops---------------------------
-            // -----------------------------------------------------------------------
-
-            // -----------------------------------------------------------------------
-            // ----------------------------Begin Logic Ops----------------------------
-            // -----------------------------------------------------------------------
-            SharkyInstruction::Jump(a) => {
-                self.program_counter = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-            }
-
-            SharkyInstruction::JumpIfNot((a, b)) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
-                let param_b = self
-                    .read_parameter(b)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
-                let mut memory = self.memory.write();
-                let read = memory
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .read(param_b)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?;
-                let mut jump = false;
-                match read {
-                    SharkyDataType::Bool(a) => {
-                        jump = !a;
-                    }
-                    _ => {}
-                }
-                if jump {
-                    self.program_counter = param_a;
-                }
-            }
-            // -----------------------------------------------------------------------
-            // ---------------------------End Logic Ops-------------------------------
-            // -----------------------------------------------------------------------
-
-            // -----------------------------------------------------------------------
-            // ---------------------------Begin Heap Ops------------------------------
-            // -----------------------------------------------------------------------
-            SharkyInstruction::CreateHeap => {
-                let address = self.heap.allocate();
-                self.memory
-                    .write()
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .push(SharkyDataType::HeapReference(address));
-            }
-
-            SharkyInstruction::SelectHeap(a) => {
-                let select = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                self.selected_frame = select;
-            }
-
-            SharkyInstruction::PushHeap => {
-                self.heap.push(self.selected_frame, &SharkyDataType::Nil);
-            }
-
-            SharkyInstruction::WriteHeap((a, b)) => {
-                let dest = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let src = self
-                    .read_parameter(b)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?;
-                let data = self
-                    .memory
-                    .read()
-                    .get_active_stack()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .read(src)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?
-                    .clone();
-                self.heap
-                    .set(self.selected_frame, dest, &data)
-                    .ok_or(SharkyInterrupt::InvalidHeapIndex)?;
-            }
-
-            SharkyInstruction::ReadHeap((a, b)) => {
-                let dest = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
-                let src = self
-                    .read_parameter(b)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
-                let data = self
-                    .heap
-                    .read(self.selected_frame, src)
-                    .ok_or(SharkyInterrupt::InvalidHeapIndex)?; // INVALID HEAP INDEX
-                self.memory
-                    .write()
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .set(dest, data)
-                    .ok_or(SharkyInterrupt::InvalidStackObjectIndex)?; // INVALID STACK INDEX / INVALID STACK OBJECT INDEX
-            }
-
-            SharkyInstruction::CloneHeap => {
-                let address = self
-                    .heap
-                    .clone_frame(self.selected_frame)
-                    .ok_or(SharkyInterrupt::InvalidHeapIndex)?;
-                self.memory
-                    .write()
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidStackIndex)?
-                    .push(SharkyDataType::HeapReference(address));
-            }
-
-            SharkyInstruction::SizeHeap => {
-                let size = self
-                    .heap
-                    .size_frame(self.selected_frame)
-                    .ok_or(SharkyInterrupt::InvalidHeapIndex)?;
-                self.memory
-                    .write()
-                    .get_active_stack_mut()
-                    .ok_or(SharkyInterrupt::InvalidHeapIndex)?
-                    .push(SharkyDataType::Max(size));
-            }
-            // -----------------------------------------------------------------------
-            // ----------------------------End Heap Ops-------------------------------
-            // -----------------------------------------------------------------------
-
-            // -----------------------------------------------------------------------
-            // ----------------------------Begin Task Ops-----------------------------
-            // -----------------------------------------------------------------------
             SharkyInstruction::SpawnSubtask(a) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
+                let param_a: SharkyMax = self.read_parameter_val(a)?;
                 let subtask = self.new_subvm(param_a);
                 self.task_pool.spawn_subtask(subtask);
             }
+
             SharkyInstruction::EndTask => {
                 self.running = false;
             }
-            // -----------------------------------------------------------------------
-            // -----------------------------End Task Ops------------------------------
-            // -----------------------------------------------------------------------
 
-            // -----------------------------------------------------------------------
-            // -----------------------------Begin FFI Ops-----------------------------
-            // -----------------------------------------------------------------------
             SharkyInstruction::FFICall(a) => {
-                let param_a = self
-                    .read_parameter(a)
-                    .ok_or(SharkyInterrupt::InvalidParameter)?; // INVALID PARAM
+                let param_a: SharkyMax = self.read_parameter_val(a)?;
                 let function = self
                     .ffi_function_table
                     .get(param_a)
-                    .ok_or(SharkyInterrupt::InvalidFFICall)?; // INVALID FFI CALL
+                    .ok_or(SharkyInterrupt::InvalidFFICall)?;
                 SharkyFFILibrary::call_function(
                     function,
                     self.memory.read().get_parameter_stack().get_vec(),
                 );
             }
-            // -----------------------------------------------------------------------
-            // -----------------------------End FFI Ops-------------------------------
-            // -----------------------------------------------------------------------
-            _ => {}
         }
 
         // as long as a jump didn't occur, increase the program counter.
@@ -610,5 +317,89 @@ impl SharkyVM {
             self.running = false;
         }
         Ok(())
+    }
+
+    fn push_active_stack(&mut self, value: SharkyDataType) -> SharkyInterpreterStatus {
+        self.memory
+            .write()
+            .get_active_stack_mut()
+            .ok_or(SharkyInterrupt::InvalidSelectedStack)?
+            .push(value);
+        Ok(())
+    }
+
+    fn write_active_stack(
+        &mut self,
+        index: usize,
+        value: SharkyDataType,
+    ) -> SharkyInterpreterStatus {
+        self.memory
+            .write()
+            .get_active_stack_mut()
+            .ok_or(SharkyInterrupt::InvalidSelectedStack)?
+            .set(index, value)
+            .ok_or(SharkyInterrupt::InvalidStackObjectIndex)
+    }
+
+    fn read_active_stack(&self, index: usize) -> Result<SharkyDataType, SharkyInterrupt> {
+        self.memory
+            .read()
+            .get_active_stack()
+            .ok_or(SharkyInterrupt::InvalidSelectedStack)?
+            .read(index)
+            .cloned()
+            .ok_or(SharkyInterrupt::InvalidStackObjectIndex)
+    }
+
+    fn convert_to(
+        value: SharkyDataType,
+        mode: ConversionMode,
+    ) -> Result<SharkyDataType, SharkyInterrupt> {
+        match mode {
+            ConversionMode::Max => value.to_max().ok_or(SharkyInterrupt::TypeMismatch),
+            ConversionMode::Int => value.to_int().ok_or(SharkyInterrupt::TypeMismatch),
+            ConversionMode::Real => value.to_real().ok_or(SharkyInterrupt::TypeMismatch),
+            ConversionMode::Byte => value.to_byte().ok_or(SharkyInterrupt::TypeMismatch),
+            ConversionMode::Bool => value.to_bool().ok_or(SharkyInterrupt::TypeMismatch),
+            ConversionMode::HeapReference => value
+                .to_heap_reference()
+                .ok_or(SharkyInterrupt::TypeMismatch),
+            _ => Err(TypeMismatch),
+        }
+    }
+
+    fn read_parameter(&self, parameter: OpParameter) -> Result<SharkyDataType, SharkyInterrupt> {
+        match parameter {
+            OpParameter::Constant(val) => Ok(val),
+            OpParameter::Pointer(index) => {
+                let ptr_index = SharkyMax::try_from(self.read_active_stack(index)?)
+                    .map_err(|_| SharkyInterrupt::NonIndexValue)?;
+                Ok(self.read_active_stack(ptr_index)?)
+            }
+            OpParameter::None => Err(SharkyInterrupt::InvalidParameter),
+        }
+    }
+
+    fn read_parameter_val<T: SharkyValue>(
+        &self,
+        parameter: OpParameter,
+    ) -> Result<T, SharkyInterrupt>
+    where
+        SharkyDataType: From<T> + TryInto<T> + Clone,
+    {
+        match parameter {
+            OpParameter::Constant(val) => val
+                .try_into()
+                .map_err(|_| SharkyInterrupt::InvalidParameter),
+            OpParameter::Pointer(index) => {
+                let ptr_index = SharkyMax::try_from(self.read_active_stack(index)?)
+                    .map_err(|_| SharkyInterrupt::NonIndexValue)?;
+                Ok(self
+                    .read_active_stack(ptr_index)?
+                    .try_into()
+                    .map_err(|_| SharkyInterrupt::TypeMismatch)?)
+            }
+            OpParameter::None => Err(SharkyInterrupt::InvalidParameter),
+        }
     }
 }

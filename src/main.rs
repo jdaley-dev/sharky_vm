@@ -28,12 +28,13 @@ fn main() {
     });
 
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
-        SharkyInstruction::SetStackMode(SharkyStackMode::Parameter),
-        // string input parameter
-        SharkyInstruction::PushByteString(SharkyParameter::Constant(sharky_string)),
-        //SharkyInstruction::Copy(SharkyParameter::Constant(4124124)),
-        SharkyInstruction::FFICall(SharkyParameter::Constant(0)),
-        SharkyInstruction::EndTask,
+        SharkyInstruction::Push(SharkyDataType::Bool(false)),
+        SharkyInstruction::Pop,
+        SharkyInstruction::Push(SharkyDataType::Int(2)),
+        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(0))),
+        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(1))),
+        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(2))),
+        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(12412412412))),
     ]);
 
     let mut cvec: CVec<usize> = CVec::new();

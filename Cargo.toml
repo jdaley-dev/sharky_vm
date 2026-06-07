@@ -9,3 +9,4 @@ derive_more = {version = "1", features = ["from", "into", "try_into"]}
 libloading = "0.8"
 parking_lot = {version = "0.12", features=["deadlock_detection"]}
 slab = "0.4"
+num_enum = "0.7"
