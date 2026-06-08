@@ -8,6 +8,7 @@ use crate::app::*;
 use crate::instructions::*;
 
 mod app;
+mod bytecode_reader;
 mod instructions;
 mod vm;
 
@@ -28,20 +29,18 @@ fn main() {
     });
 
     let program_arc: Arc<SharkyProgram> = Arc::new(vec![
-        SharkyInstruction::Push(SharkyDataType::Bool(false)),
-        SharkyInstruction::Pop,
-        SharkyInstruction::Push(SharkyDataType::Int(2)),
-        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(0))),
-        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(1))),
-        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(2))),
-        SharkyInstruction::Copy(OpParameter::Constant(SharkyDataType::Max(12412412412))),
+        // no op
+        SharkyInstruction::NoOperation,
+        // stack ops
+        SharkyInstruction::SelectStack(
+            OpParameter::Constant(SharkyDataType::Max(0)),
+            SelectStackMode::Indexed,
+        ), // select indexed stack 0
+        SharkyInstruction::Push(SharkyDataType::Real(2.4)),
+        SharkyInstruction::Push(SharkyDataType::Int(SharkyInt::MIN)),
+        SharkyInstruction::Push(SharkyDataType::Max(SharkyMax::MAX)),
+        SharkyInstruction::Push(SharkyDataType::ByteString(sharky_string)),
     ]);
-
-    let mut cvec: CVec<usize> = CVec::new();
-    let mut operator = cvec.get_operator_mut();
-    operator.push(44);
-    println!("Value: {}", operator.get(0).unwrap());
-    drop(operator);
 
     SharkyApp::init(program_arc, vec![], library_pool);
 }

@@ -31,9 +31,9 @@ pub enum ComparisonMode {
     Equals = 2,
     NotEquals = 3,
     GreaterThan = 4,
-    LesserThan = 5,
+    LessThan = 5,
     GreaterThanOrEquals = 6,
-    LesserThanOrEquals = 7,
+    LessThanOrEquals = 7,
 }
 
 #[derive(Debug, Clone, TryFromPrimitive)]
@@ -54,7 +54,6 @@ pub enum ConversionMode {
 pub enum LogicMode {
     If = 0,
     IfNot = 1,
-    PopIf = 2,
 }
 
 #[derive(Debug, Clone, TryFromPrimitive)]
@@ -86,8 +85,9 @@ pub enum HeapOpMode {
 pub enum OpParameter {
     #[default]
     None,
-    Constant(SharkyDataType),
-    Pointer(usize),
+    Constant(SharkyDataType), // A constant value
+    Index(usize),             // The value at a stack index
+    Pointer(usize),           // The value of an index at a stack index
 }
 
 #[allow(unused)]
@@ -128,13 +128,27 @@ pub enum SharkyInstruction {
     CopyToHeapItem(OpParameter, OpParameter),
     CopyFromHeapItem(OpParameter, OpParameter),
 
-    PushBytes(OpParameter, OpParameter, OpParameter),
-    SetByte((OpParameter, OpParameter, OpParameter)),
-    ReadByteAs((OpParameter, OpParameter, ConversionMode)),
+    // dest, value
+    FillByteStringWithValue(OpParameter, OpParameter),
+    // dest, length
+    ExtendByteString(OpParameter, OpParameter),
+    // dest, src
+    CopyToByteString(OpParameter, OpParameter),
+    // dest, src
+    CopyFromByteString(OpParameter, OpParameter),
+    // dest, src
+    AppendByteString(OpParameter, OpParameter),
+    // input
+    ClearByteString(OpParameter),
+    // input
+    ByteStringSize(OpParameter),
+    // src, begin, end
+    SliceByteString(OpParameter, OpParameter, OpParameter),
 
     ArithmeticOp(OpParameter, OpParameter, ArithmeticMode),
     BitwiseOp(OpParameter, OpParameter, BitwiseMode),
     ComparisonOp(OpParameter, OpParameter, ComparisonMode),
+    NotBool(OpParameter),
 
     Goto(OpParameter),
     LogicalGoto(OpParameter, OpParameter, LogicMode),
