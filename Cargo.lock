@@ -281,7 +281,7 @@ dependencies = [
 [[package]]
 name = "sharky_env"
 version = "0.1.0"
-source = "git+https://github.com/jdaley-dev/sharky_env.git#4a504dde252056a86729c30ad060ee5c94a94413"
+source = "git+https://github.com/jdaley-dev/sharky_env.git#4937de990fb55f0ab24dfb52743403dabc9c5549"
 dependencies = [
  "derive_more",
  "libloading",

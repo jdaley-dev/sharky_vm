@@ -1,4 +1,10 @@
-use std::path::Path;
+use std::{
+    fs::File,
+    io::{BufReader, Seek},
+    path::Path,
+};
+
+use sharky_env::simplex_file_read::{SimplexReadable, simplex_le_read};
 
 #[repr(u16)]
 pub enum SharkyOpCode {
@@ -75,6 +81,10 @@ pub struct SharkyBytecodeHeader {
     end_offset: u64,
 }
 
+impl SharkyBytecodeHeader {
+    fn from<T: Seek, Read>(reader: BufReader<T>) -> Self {}
+}
+
 pub struct SharkyBytecodeConstants {
     symbols: Vec<SharkyLibrarySymbol>,
     strings: Vec<String>,
@@ -93,7 +103,20 @@ pub struct SharkyBytecodeProgram {
 }
 
 impl SharkyBytecodeProgram {
-    fn load_file(path: &Path) {
-        
+    fn load_file(path: &Path) -> Option<Self> {
+        let file = File::open(path).ok()?;
+        let mut reader = BufReader::new(file);
+
+        let magic: u32 = simplex_le_read::<u32, File>(&mut reader)?;
+        let header = SharkyBytecodeHeader {
+            magic,
+            version: todo!(),
+            symbol_offset: todo!(),
+            string_offset: todo!(),
+            globals_offset: todo!(),
+            program_offset: todo!(),
+            end_offset: todo!(),
+        };
+        None
     }
 }
